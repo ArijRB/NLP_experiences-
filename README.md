@@ -5,7 +5,7 @@ Kim-Anh Laura Nguyen et Arij Riabi
 
 # Table des matières
 ## 1 POS tagging, analyse de phrases
- 1.1 Approche à base de dictionnaire \\
+ 1.1 Approche à base de dictionnaire \n
  1.2 Méthodes séquentielles \\
  1.3 Expériences dans nltk \\
 ## 2 Classification de documents

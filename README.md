@@ -9,7 +9,7 @@ Kim-Anh Laura Nguyen et Arij Riabi
  1.2 Méthodes séquentielles 
  1.3 Expériences dans nltk 
 ## 2 Classification de documents
- 2.1 Détection d’auteur : Chirac/Mitterrand 
+2.1 Détection d’auteur : Chirac/Mitterrand 
 2.1.1 Unigrammes 
 2.1.2 Version 4 : Bigrammes 
 2.1.3 Trigrammes 

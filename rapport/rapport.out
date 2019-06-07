@@ -1,0 +1,20 @@
+\BOOKMARK [1][-]{section.1}{POS tagging, analyse de phrases}{}% 1
+\BOOKMARK [2][-]{subsection.1.1}{Approche \340 base de dictionnaire}{section.1}% 2
+\BOOKMARK [2][-]{subsection.1.2}{M\351thodes s\351quentielles}{section.1}% 3
+\BOOKMARK [2][-]{subsection.1.3}{Exp\351riences dans nltk}{section.1}% 4
+\BOOKMARK [1][-]{section.2}{Classification de documents}{}% 5
+\BOOKMARK [2][-]{subsection.2.1}{D\351tection d'auteur : Chirac/Mitterrand}{section.2}% 6
+\BOOKMARK [3][-]{subsubsection.2.1.1}{Unigrammes}{subsection.2.1}% 7
+\BOOKMARK [3][-]{subsubsection.2.1.2}{Version 4 : Bigrammes}{subsection.2.1}% 8
+\BOOKMARK [3][-]{subsubsection.2.1.3}{Trigrammes}{subsection.2.1}% 9
+\BOOKMARK [3][-]{subsubsection.2.1.4}{R\351sum\351}{subsection.2.1}% 10
+\BOOKMARK [2][-]{subsection.2.2}{Analyse de sentiments : polarit\351 de revues}{section.2}% 11
+\BOOKMARK [3][-]{subsubsection.2.2.1}{Unigrammes}{subsection.2.2}% 12
+\BOOKMARK [3][-]{subsubsection.2.2.2}{Version 4 : Bi-grammes}{subsection.2.2}% 13
+\BOOKMARK [3][-]{subsubsection.2.2.3}{Tri-grammes}{subsection.2.2}% 14
+\BOOKMARK [3][-]{subsubsection.2.2.4}{R\351sum\351}{subsection.2.2}% 15
+\BOOKMARK [1][-]{section.3}{S\351mantique et cat\351gorisation th\351matique}{}% 16
+\BOOKMARK [2][-]{subsection.3.1}{Cat\351gorisation th\351matique sur les donn\351es Associated Press}{section.3}% 17
+\BOOKMARK [3][-]{subsubsection.3.1.1}{Extraction de topics}{subsection.3.1}% 18
+\BOOKMARK [3][-]{subsubsection.3.1.2}{Inf\351rence}{subsection.3.1}% 19
+\BOOKMARK [3][-]{subsubsection.3.1.3}{Cat\351gorisation th\351matique sur les donn\351es Reuters}{subsection.3.1}% 20

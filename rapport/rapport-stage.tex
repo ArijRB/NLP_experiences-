@@ -1,0 +1,2617 @@
+%\section{Introduction} Dans beaucoup de problèmes de classification, les valeurs
+%des attributs et de la classe sont ordinaux. De plus, il peut exister une
+%contrainte de monotonie: la classe d'un objet doit croître/décroître en fonction
+%de la valeur de tout ou partie de ses attributs.  A savoir, étant donné deux
+%objets $x, x'$, si $x \leq x'$ alors $f(x) \leq f(x')$. Les variables
+%dépendantes, $f(x)$ et $f(x')$, sont des fonctions monotones des variables
+%indépendantes, $x$ et $x'$.
+%On parle alors de problèmes de classification monotone, ou problèmes de
+%classification avec contrainte de monotonie. Cette contrainte indique que les
+%objets ayant de meilleures valeurs d'attributs ne doivent pas être assignés à de
+%moins bonnes valeurs de classe.\\
+%L'ajout de cette contrainte de monotonie permet d'introduire des concepts
+%sémantiques tels la préférence, la priorité, l'importance, qui nécessitent une
+%relation d'ordre.\\ Il existe de nombreux domaines se prêtant à ce type de
+%tâches, tels la prédiction du risque de faillite \cite{greco-new-bankruptcy},
+%l'analyse de la satisfaction des clients \cite{greco-customer}, le diagnostic
+%médical \cite{marsala-gradual}. 
+%L'importance de la prise en compte d'une relation graduelle entre les valeurs
+%d'attributs et la classe a été démontrée \cite{pazzani-acceptance}: les
+%classifieurs auxquels sont imposés la contrainte de monotonie sont au moins
+%aussi performants que leurs homologues classiques, et les experts sont plus
+%enclins à utiliser les règles générées par les modèles monotones.\\
+%Afin d'extraire des règles à partir de données monotones, on décide d'utiliser
+%les arbres de décision, dont l'efficacité et l'interprétabilité en
+%classification a été prouvée \cite{quinlan-induction}.  Cependant, les
+%algorithmes de construction d'arbres de décision standards (générés par CART
+%\cite{leo-classification}) ne produisent pas de classifieurs sensibles à la
+%monotonie, même si la base utilisée est complètement monotone.  En revanche, il
+%est montré dans \cite{ben-adding} que les classifieurs purement monotones
+%(\cite{ben-learning}, \cite{ben-monotonicity}, \cite{cao-consistent}) sont, en
+%terme de taux de bonne classification, statistiquement indiscernables de leurs
+%homologues non-monotones.  Dans le même article, il est expliqué que ce
+%phénomène est dû à la sensibilité de ces classifieurs au bruit non-monotone
+%présent dans les données réelles. \\
+%
+%Ce stage a pour but d'étudier la construction et l'évaluation d'arbres de
+%décision prenant en compte une relation graduelle susceptible d'exister entre
+%les valeurs d'attributs et la classe, tout en étant suffisamment robuste au
+%bruit non-monotone. On reprend, en particulier, \cite{marsala-rank} pour la
+%construction d'arbres de décision monotones paramétrés par une mesure de
+%discrimination d'ordre, i.e. une mesure tenant compte de la monotonie d'un
+%attribut par rapport à la classe. Une étude théorique des propriétés des mesures
+%présentées dans le même article est également effectuée.\\
+%
+%Dans un premier temps, on présente quelques méthodes présentées dans la
+%littérature. On effectue ensuite l'étude théorique des mesures de
+%discrimination d'ordre, avant de se pencher sur l'implémentation et
+%l'expérimentation de l'algorithme de construction d'arbres monotones. \\
+%
+%\section{Etat de l'art} 
+%Dans cette section, on présente les méthodes proposées par Hu et al.
+%\cite{hu-rank}, Marsala et Petturiti \cite{marsala-rank}, Qian et al.
+%\cite{qian-fusing} et Pei et Hu \cite{pei-partially}.
+%
+%\subsection{Notations}
+%On considère un ensemble $\Omega = \{\omega_1,...,\omega_n\}$ de~$n$ d'éléments définis
+%par un ensemble de~$m$ attributs $A = \{a_1,...,a_m\}$, où pour tout $j=1,...,m, a_j$
+%est une fonction de $\Omega$ vers $X_j = \{x_{j_1},...,x_{t_j}\}$. On note aussi
+%$\lambda: \Omega \rightarrow C$ la fonction d'étiquetage, où $C =
+%\{c_1,...,c_k\}$ est un ensemble de classes totalement ordonné.
+%
+%Pour $\omega_i \in \Omega$, l'ensemble dominant de $\omega_i$ généré par $a_j$
+%est défini (\cite{greco-roughappr}, \cite{greco-roughsets}) de la façon suivante :
+%
+%$$[\omega_i]^{\leq}_{a_j} = \{w_h \in \Omega : a_j(\omega_i) \leq a_j(\omega_h)\}$$
+%
+%De même, l'ensemble dominant de $\omega_i$ généré par $\lambda$ s'écrit :
+%
+%$$[\omega_i]^{\leq}_{\lambda} = \{w_h \in \Omega : \lambda(\omega_i) \leq
+%\lambda(\omega_h)\}$$ 
+%
+%Les notions de \emph{dominance rough sets} sont également utilisées. On
+%cherche à approximer l'ensemble $c^{\geq}_q$, i.e., l'ensemble des éléments de
+%$\Omega$ dont la classe est inférieure à $c_q$.
+%
+%\noindent Soit $B \subseteq A$ et $c_q$ une classe. Les approximations
+%inférieure et supérieure de $c^{\geq}_q$ sont définies \cite{hu-rank} de la
+%façon suivante:
+%
+%$$ \underline{R^{\geq}_B}(c^{\geq}_q) = \{\omega \in \Omega :
+%[\omega]^{\geq}_B \subseteq c^{\geq}_q\}$$
+%
+%$$ \overline{R^{\geq}_B}(c^{\geq}_q) = \{\omega \in \Omega :
+%[\omega]^{\leq}_B \cap c^{\geq}_q \neq \varnothing\}$$
+%
+%On note également $\Omega_{\alpha}$ l'ensemble des éléments considérés à chaque
+%étape de l'induction de l'arbre de décision.
+%
+%\subsection{Arbre de décision basé sur l'entropie d'ordre}
+%Il est montré dans \cite{ben-adding} que les classifieurs purement monotones ne
+%procurent pas de meilleurs résultats que leurs homologues classiques lorsque les
+%données contiennent un taux élevé de bruit non-monotone. 
+%
+%Afin de résoudre ce problème, les auteurs de \cite{hu-rank} proposent un algorithme robuste pour la
+%classification monotone.
+%
+%\subsubsection{Construction du modèle}
+%
+%Pour cela, ils définissent une mesure de degré de monotonie entre deux
+%attributs, qu'ils nomment information mutuelle d'ordre, ou
+%\emph{rank mutual information} (RMI): \\
+%
+%\begin{equation}
+%    RMI^{\leq}(a_j, a_{j'}) = -\frac{1}{n} \sum_{i=1}^{n} \log
+%    \frac{|[\omega_i]^{\leq}_{a_j}] \times [\omega_i]^{\leq}_{a_{j'}}]|}{n \times
+%    |[\omega_i]^{\leq}_{a_j}]\cap [\omega_i]^{\leq}_{a_{j'}}]|}
+%\label{eq:RMI}
+%\end{equation}
+%
+%RMI, sensible à la monotonie et robuste face aux données bruitées, est utilisé
+%comme mesure de sélection d'attribut dans leur algorithme de construction
+%d'arbres de décision monotones, REMT (\emph{Rank Entropy Based Decision
+%Tree}).
+%
+%Dans cet article, on considère seulement les arbres binaires dans lesquels
+%chaque noeud est affecté à un seul attribut. Concernant les données, les
+%attributs doivent être numériques et la classe, ordinale.
+%
+%\noindent À chaque étape de l'induction :
+%\begin{itemize}
+%    \item si $|\Omega_{\alpha}| = 1$ ou tous les éléments
+%de $\Omega_{\alpha}$ partagent la même classe, une feuille est créée. 
+%    \item Sinon, pour chaque attribut $a_j$, pour chaque valeur d'attribut $x_{j_s}$, l'ensemble
+%des éléments est divisé en deux sous-ensembles à partir desquels on calcule
+%$RMI_{x_{j_s}} = RMI(a^{x_{j_s}}_j, \lambda)$. On récupère, pour chaque $a_j$,
+%le seuil de coupure $x^*_j$ maximisant l'information mutuelle d'ordre :
+%$x^*_{j_s} = arg\,max RMI_{x_{j_s}}.$ L'attribut $a^*$ utilisé pour le
+%partitionnement est celui dont le seuil $x^*$ maximise
+%$RMI(a^{x_{j_s}}_j,\lambda)$, pour $j=1,...,m, s=1,...t_j-1.$ 
+%    \item Si $RMI(a^*,
+%\lambda) < \epsilon$, une feuille est créée. 
+%    \item Sinon, un noeud est construit et la
+%procédure est répétée sur les sous-ensembles induits par $a^*$ et $x^*$.
+%\end{itemize}
+%
+%Concernant le critère d'étiquetage, si tous les exemples de la feuille possèdent
+%la même classe, on lui assigne cette dernière. Sinon, si les exemples
+%proviennent de classes différentes, on assigne la classe médiane. Dans le cas où
+%deux classes possèdent le même nombre d'exemples et la feuille courante provient
+%de la branche gauche de son noeud parent, on lui assigne la pire classe. Sinon,
+%on lui affecte la meilleure.  \\
+%
+%L'approche de construction gloutonne du classifieur ne permet pas d'obtenir un
+%arbre globalement monotone, même si les données utilisées sont monotones. En
+%revanche, cette méthode garantit une monotonie plus faible : il est montré que
+%si la base de données utilisée lors de la construction de l'arbre est
+%monotone-consistente, alors les règles générées par REMT sont monotones
+%\cite{hu-rank}. \\
+%
+%\subsubsection{Évaluation du modèle}
+%
+%Afin d'évaluer la performance de leur algorithme, Hu et al. utilisent l'erreur
+%absolue moyenne, ou \emph{Mean Absolute Error} (MAE) : 
+%
+%\begin{equation}
+%    MAE = \frac{1}{n}
+%\sum_{i=1}^{n}|f(\omega_i) - \lambda(\omega_i)| 
+%\label{eq:MAE}
+%\end{equation}
+%où $f(\omega_i)$ est la
+%classe prédite par REMT. \\
+%
+%\subsubsection{Validation du modèle}
+%
+%L'algorithme est testé sur des bases de données artificielles et réelles. \\
+%
+%Les bases de données artificielles générées sont monotones. Elles contiennent
+%1000 exemples à deux attributs, et un nombre de classes variant de 2 à 30.
+%
+%REMT est ici comparé à CART, Rank Tree \cite{xia-ranking}, OLM
+%\cite{ben-learning} et OSDL \cite{cao-supervised}. Les expériences montrent que
+%REMT produit le moins d'erreurs parmi ces algorithmes, hormis dans le cas à deux
+%classes.  Les auteurs soulignent aussi que REMT est le plus précis des quatre
+%algorithmes, peu importe le nombre d'éléments utilisés lors de la construction
+%de l'arbre. \\
+%
+%Sur des bases de données réelles, Hu et al. \cite{hu-rank} comparent leur modèle
+%à CART et Rank Tree \cite{xia-ranking}. Les expériences menées montrent que REMT
+%donne de meilleurs résultats en termes de MAE sur 10 bases sur les 12
+%collectées. De plus, les auteurs montrent également que plus la taille de la
+%base d'apprentissage diminue, plus l'écart de performance se creuse entre REMT
+%et les autres modèles.  \noindent Enfin, dans le but de comparer les
+%performances des algorithmes lorsque les données sont monotones, les mêmes bases
+%sont modifiées à l'aide d'un algorithme de monotonization \cite{kotlowski-rule}.
+%Les résultats des expérimentations montrent que REMT est plus performant que les
+%autres modèles. De plus, les valeurs de MAE produites par tous les modèles
+%diminuent lorsque les données sont monotisées.
+%
+%\subsection{Arbre de décision paramétré par une mesure de discrimination
+%d'ordre} 
+%Dans \cite{marsala-rank}, Marsala et Petturiti étudient l'influence de
+%la mesure de discrimination utilisée lors de la construction du classifieur, en
+%termes de taux de bonne prédiction et de monotonie. 
+%
+%Comme les mesures étudiées dans l'article partagent toutes la même structure
+%fonctionnelle, les auteurs définissent un modèle de construction hiérarchique
+%permettant d'isoler les propriétés d'une mesure de discrimination d'ordre et
+%d'en créer de nouvelles. \\
+%Soit $H^*$ une mesure de discrimination d'ordre. Le pouvoir de discrimination de
+%l'attribut $a_j$ envers $\lambda$ selon $H^*$ peut donc s'écrire de la façon suivante :
+%$$ H^*(\lambda | a_j) = h^*(g^*(f^*(\omega_1)),...,g^*(f^*(\omega_n)))$$
+%
+%où $f^*$ mesure la monotonie locale d'un objet par rapport à la classe, $g^*$
+%est une transformation strictement décroissante de $f^*$, et $h^*$ agrège les
+%mesures $g^*$. \\
+%
+%Un algorithme de construction d'arbre de décision nommé RDMT (\emph{Rank
+%Discrimination Measure Tree}) est proposé \cite{hu-rank}. Cette méthode est
+%essentiellement basée sur REMT mais utilise, à la place de RMI, une mesure de
+%discrimination passée en paramètre.
+%
+%\noindent Comme précédemment, seuls les arbres binaires sont considérés. Ce
+%classifieur gère à la fois les attributs numériques et ordinaux, mais la classe
+%doit être ordinale. Les données incomplètes ne sont pas acceptées.\\
+%
+%\subsubsection{Construction du modèle}
+%
+%Notons $H$ la mesure de discrimination utilisée, $\epsilon$ le seuil minimal pour
+%$H$, $n_{min}$ la taille minimale pour $\Omega_{\alpha}$, $\delta$ la
+%profondeur courante de la branche, et $\Delta$ la profondeur maximale que peut
+%avoir une branche de l'arbre. \\
+%
+%\noindent A chaque étape de l'induction :
+%\begin{itemize}
+%    \item si $|\Omega_{\alpha}| < n_{min}$ ou tous les éléments
+%de $\Omega_{\alpha}$ partagent la même classe ou $\delta > \Delta$, une feuille est créée. 
+%    \item Sinon, pour chaque attribut $a_j$, pour chaque valeur d'attribut $x_{j_s}$, l'ensemble
+%des éléments est divisé en deux sous-ensembles à partir desquels on calcule
+%        $H(\lambda|a^{x_{j_s}}_j)$. On récupère, pour chaque $a_j$,
+%le seuil de coupure $x^*_j$ minimisant la valeur de H:
+%$x^*_{j} = arg\,min H(\lambda|a^{x_{j_s}}_j)$. L'attribut $a^*$ utilisé pour le
+%partitionnement est celui dont le seuil $x^*$ minimise
+%$H(\lambda|a^{x_{j_s}}_j)$, pour $j=1,...,m, s=1,...t_j-1.$ 
+%    \item Si $H(\lambda|a^*) < \epsilon$, une feuille est créée. 
+%    \item Sinon, un noeud est construit et la
+%procédure est répétée sur les sous-ensembles induits par $a^*$ et $x^*$. \\
+%\end{itemize}
+%
+%\noindent Comme REMT, RDMT ne garantit pas un classifieur globalement monotone, mais
+%un arbre générant des règles monotones.  \\
+%
+%\subsubsection{Évaluation du modèle}
+%
+%Les auteurs évaluent les modèles construits selon trois critères: l'accuracy, la monotonie et la taille des arbres (en termes de nombre de
+%feuilles). \\
+%\noindent L'accuracy est évalué par :
+%\begin{itemize}
+%    \item Le taux de bonne classification (\emph{Correctly Classified
+%        Instances}) :
+%        \begin{equation}
+%            CCI = \frac{1}{n} \sum_{i=1}^{n} (f(\omega_i) \oplus
+%            \lambda(\omega_i))
+%        \label{eq:cci}
+%        \end{equation}
+%        où, $f(\omega_i)$ est la classe prédite pour $\omega_i$ par le
+%        classifieur, et $f(\omega_i) \oplus \lambda(\omega_i) = 1$ si $f(\omega_i) =
+%        \lambda(\omega_i)$, $f(\omega_i) \oplus \lambda(\omega_i) = 0$ sinon. 
+%    \item \textcolor{red}{Le test de Kappa} % à compléter
+%    \item MAE (\eqref{eq:MAE})
+%\end{itemize}
+%
+%\noindent La monotonie d'un arbre est évaluée par deux mesures :
+%\begin{itemize}
+%    \item L'index I de non-monotonie d'un arbre $\mathcal{T}$:  
+%        \begin{equation}
+%            I(\mathcal{T}) = \frac{\sum_{u=1}^q \sum_{v=1}^{q} m_{u,v}}{q^2 - q}
+%        \end{equation}
+%        où q est le nombre de feuilles de $\Gamma$ et $m_{u,v}$ vaut 1 si les
+%        feuilles $l_u, l_v$ ne sont pas monotones, 0 sinon.
+%    \item L'index NMI1 des exemples dans chaque base de test $\mathcal{D}$:
+%        \begin{equation}
+%            NMI1(\mathcal{D}) = \frac{\sum_{i=1}^n \sum_{h=1}^{n} NMP(\omega_i,
+%            \omega_h)}{n^2 - n}
+%        \end{equation}
+%        où $NMP(\omega_i, \omega_h)$ vaut 1 si la paire $\omega_i, \omega_h$
+%        n'est pas monotone, 0 sinon. \\
+%\end{itemize}
+%
+%\subsubsection{Validation du modèle}
+%
+%Les expériences menées dans l'article visent à comparer les arbres obtenus
+%par différentes mesures ($H^*_S, H_S, H^*_G, H_G, H^*_P, H^{10}_{MID}, H_{ICT}$).
+%
+%11 bases artificielles sont générées, dont le taux de NMI augmente de 0\% à 10\%
+%avec un pas de 1\%. Chaque base contient 500 exemples à 5 attributs et 5
+%classes. \\ 
+%\noindent Les tests menés sur ces bases montrent qu'il n'existe
+%aucune différence significative entre les mesures en ce qui concerne les indices
+%d'accuracy. De plus, les mesures de discrimination d'ordre produisent des arbres
+%plus monotones, en particulier lorsque le taux de bruit non-monotone de la base
+%augmente. Enfin, il est également montré que ces mesures de discrimination
+%produisent des arbres contenant plus de feuilles que les mesures classiques.
+%
+%15 bases de données réelles sont séléctionnées pour évaluer les mesures sur des
+%cas d'applications concrets. Comme précédemment, il n'y a pas de différence
+%d'accuracy significative entre les mesures. Cependant, $H^*_S, H^*_G,$ et
+%$H^*_P$ génèrent des arbres plus monotones et comportant davantage de feuilles.
+%\\
+%
+%Les arbres produits par des mesures de discrimination d'ordre ne sont pas
+%destinés à être directement utilisés pour la classification monotone. En
+%revanche, étant donné leur degré de monotonie plus élevé, il est avantageux de
+%les passer en entrée d'algorithmes de post-traitement afin de renforcer la
+%monotonie globale.
+%
+%\subsection{Fusion d'arbres de décision monotones} 
+%Afin d'améliorer la capacité de généralisation du modèle de classification, Qian
+%et al. proposent dans \cite{qian-fusing} une méthode d'ensemble par fusion
+%d'arbres de décision monotones, notée FREMT (\emph{Fusing rank entropy based
+%monotonic decision trees}).
+%
+%Les auteurs couplent une méthode de réduction d'attributs préservant l'ordre
+%avec REMT, utilisé pour générer les classifieurs de base.
+%
+%Pour réduire l'ensemble des attributs, ils se basent sur les \emph{dominant
+%rough sets} et mettent à jour leur définition. Ils introduisent un paramètre
+%$\beta$ qui permet de paramétrer la sensibilité du \emph{rough set} au bruit
+%non-monotone. L'ensemble à approximer est : 
+%$$c^{\geq}_q = \bigcup_{u \leq q} C_u$$
+%où $C_u \in \Omega / \lambda = \{C_1, C_2,...,C_r\}$ tel que, pour tout $q, u \leq r$, si $q
+%\geq u$ alors les éléments de $C_q$ sont préférés à ceux de $C_u$.
+%
+%\noindent Soit $B \subseteq A$ et $c_q$ une valeur de classe. Les approximations
+%inférieure et supérieure de $c^{\geq}_q$ sont définis de la façon suivante:
+%
+%\begin{equation}
+%    \underline{R^{\geq}_B}(c^{\geq}_q) = \{\omega \in \Omega :
+%    \frac{|[\omega]^{\geq}_B \cap c^{\geq}_q|}{|[\omega]^{\geq}_B|} \geq 1 -
+%    \beta\}
+%\end{equation}
+%
+%\begin{equation}
+%    \overline{R^{\geq}_B}(c^{\geq}_q) = \{\omega \in \Omega :
+%    \frac{|[\omega]^{\geq}_B \cap c^{\geq}_q|}{|[\omega]^{\geq}_B|} \geq \beta\}
+%\end{equation}
+%
+%\noindent où $0 \leq \beta \leq 0.5$
+%
+%\noindent La frontière ascendante de $c_q$ liée à l'ensemble d'attributs B s'écrit :
+%
+%\begin{equation}
+%    BND^{\beta}_B(c^{\geq}_q) = \overline{R^{\geq}_B}(c^{\geq}_q) -
+%    \underline{R^{\geq}_B}(c^{\geq}_q)
+%\end{equation}
+%
+%\noindent La dépendance monotone de $\lambda$ selon B est donc exprimée de la façon
+%suivante :
+%
+%\begin{equation}
+%    \gamma^{\beta}_B(\lambda) = \frac{|\Omega - \bigcup_{q=1}^k
+%    BND^{\beta}_B(c^{\geq}_q)|}{|\Omega|}
+%\end{equation}
+%
+%\noindent A partir de cette définition, il est possible d'établir un coefficient de
+%pertinence d'un attribut $a$ dans B, relativement à $\lambda$. La pertinence
+%interne de $a$ dans B relativement à $\lambda$ est définie de la manière suivante
+%:
+%
+%\begin{equation}
+%    Sig^{\beta}_{inner}(a, B, \lambda) = \gamma^{\beta}_B(\lambda) -
+%    \gamma^{\beta}_{B-\{a\}}(\lambda)
+%\label{eq:sig-inner}
+%\end{equation}
+%
+%\noindent De la même façon, $\forall a \in A-B$, la pertinence externe de a selon B
+%correspond à :
+%
+%\begin{equation}
+%    Sig^{\beta}_{outer}(a, B, \lambda) = \gamma^{\beta}_{B \cup \{a\}}(\lambda) -
+%    \gamma^{\beta}_B(\lambda) \\
+%\label{eq:sig-outer}
+%\end{equation}
+%
+%À l'aide de ces mesures de pertinence d'attributs, Qian et al.
+%\cite{qian-fusing} proposent un algorithme de réduction d'attributs, paramétré
+%par $\beta$, qui, étant donné $\Omega$,~$A$ et $\lambda$, génère une réduction
+%(\emph{reduct}) d'attributs monotones. Le principe est le suivant :
+%
+%\begin{itemize}
+%    \item On récupère dans~$B$ les attributs noyaux de~$B$ en utilisant
+%        $Sig^{\beta}_{inner}$.
+%    \item Pour tout attribut $a_j \in A-B$, on calcule $Sig^{\beta}_{outer}(a_j,
+%        B, \lambda)$ (\eqref{eq:sig-outer}). 
+%    \begin{itemize}
+%        \item Si la valeur calculée est supérieure ou égale à toutes celles obtenues
+%            précédemment, alors on rajoute $a_j$ dans~$B$.
+%        \item on réitère le processus jusqu'à ce que, pour tout $a_i \in A-B$,
+%            $Sig^{\beta}_{outer}(a_i, B, \lambda) = 0$, i.e., rajouter $a_i$
+%            à~$B$ ne modifie pas $\gamma^{\beta}_{B}(\lambda)$.
+%    \end{itemize}
+%\end{itemize}
+%
+%\noindent Comme la taille de l'ensemble des attributs monotones sélectionnés par cette
+%méthode est bien moindre que celle de l'ensemble original, l'arbre de décision
+%induit par ces attributs sera moins profond et contiendra moins de noeuds, ce
+%qui implique une meilleure aptitude à généraliser. Chaque arbre produit par cet
+%algorithme sert de classifieur de base pour la méthode d'ensembles.
+%
+%Afin d'obtenir un classifieur final performant, il est nécessaire de produire
+%des arbres les plus diversifiés possibles. Plusieurs sous-ensembles d'attributs
+%sont donc sélectionnés, et chacun de ces sous-ensembles est une réduction d'attributs
+%qui préserve la monotonie des données. 
+%
+%\noindent Les auteurs définissent donc une méthode de recherche de multiples réductions
+%d'attributs monotones, paramétrée par $\beta$. Étant donné $\Omega$,~$A$ et
+%$\lambda$, elle consiste à :
+%\begin{itemize}
+%    \item Trouver les attributs noyaux de A en utilisant $Sig^{\beta}_{inner}$
+%        (\eqref{eq:sig-inner}).
+%    \item Trier par ordre croissant les attributs restants $a_j \in B$ en fonction de
+%        $\gamma^{\beta}_{B} + \frac{|\Omega / \{a_j\}|}{|\Omega|}$.
+%    \item Stocker dans $P^*$ les deux sous-ensembles précédents.
+%    \item À partir de $P^*$, trouver une réduction
+%d'attributs $RED_0$ avec l'algorithme de réduction d'attributs donné plus haut.
+%    \item Pour chacun des attributs $a_j$ se trouvant dans $RED_0$ mais n'étant
+%        pas des attributs noyaux,
+%    \begin{itemize}
+%        \item Enlever $a_j$ de $P^*$.
+%        \item Calculer une réduction $RED_j$ à partir de $P^*$ grâce à
+%            l'algorithme précédent.
+%        \item Si $RED_j$ n'a pas déjà été trouvée précédemment, rajouter $RED_j$
+%            à l'ensemble des réductions obtenues.
+%        \item Remettre $a_j$ dans $P^*$.
+%    \end{itemize}
+%\end{itemize}
+%
+%\noindent Cette méthode permet de générer un ensemble de réductions d'attributs
+%monotones aussi diversifié que possible. Ces sous-ensembles d'attributs servent
+%de base pour construire des arbres de décision complémentaires, générés par
+%REMT. 
+%
+%Soit $F = \{T_1,T_2,...,T_N\}$ une forêt d'arbres de décision générés par $RED =
+%\{RED_1,RED_2,...,RED_N\}$. Étant donnés $\Omega$, $A$, $\lambda$,
+%$\beta = \{\beta_1,\beta_2,\}$, et $\omega$ un objet dont la classe est à
+%déterminer, l'algorithme final de fusion d'arbres de décision
+%monotones, \emph{Fusing rank entropy based monotonic decision trees (FREMT)},
+%est le suivant :
+%\begin{itemize}
+%    \item Pour $i=1,...,M$, trouver $RED_i = \{RED_0,RED_1,...,RED_{N_i}\}$ avec
+%        l'algorithme précédent
+%    \item Stocker dans $RED$ l'union de tous les ensembles de réductions $RED_i$ générés
+%    \item Pour chaque $RED_j \in RED$, générer un arbre $T_j$ avec REMT.
+%    \item Construire F la forêt d'arbres $\{T_1,T_2,...,T_N\}$.
+%    \item Déterminer la classe de $\omega$ avec F selon le principe de fusion
+%        basé sur la probabilité maximale (\emph{Fusing principle based on
+%        maximal probability}). \\
+%\end{itemize}
+%
+%\subsubsection{Évaluation et validation du modèle}
+%
+%Qian et al. \cite{qian-fusing} évaluent la performance de leur modèle selon le taux de bonne
+%classification (\eqref{eq:cci}) et MAE (\eqref{eq:MAE}). \\
+%
+%Les tests sont menés uniquement sur des bases réelles.
+%
+%\noindent Sur les 10 bases récupérées, 9 nécessitent un pré-traitement afin
+%d'être adaptés à l'algorithme de fusion d'arbres (en transformant les problèmes
+%de monotonie descendantes en problèmes de monotonie ascendantes). De plus, afin
+%de comparer les performances des modèles lorsque les données sont monotones, les
+%classes des données sont modifiées à l'aide d'un algorithme de monotonization.
+%
+%\noindent Les auteurs observent d'abord les performances des arbres constituant
+%la forêt (construits à partir des réductions d'attributs des données d'origine)
+%puis la performance du modèle final. Ils comparent leurs résultats à ceux
+%obtenus par REMT.
+%
+%\noindent D'après les expériences menées, on observe que les arbres de décision
+%générés par les réductions d'attributs offrent de meilleurs résultats en termes
+%de taux de bonne classification et d'erreur absolue moyenne dans la plupart des
+%cas. De plus, les valeurs générées sont différentes les unes des autres, ce qui
+%satisfait la contrainte de diversité nécessaire au modèle d'ensembles.
+%Enfin, le classifieur produit par FREMT s'avère être meilleur que
+%celui généré par REMT sur toutes les bases considérées, en termes de taux de
+%bonne classification et d'erreur absolue moyenne. FREMT permet aussi d'améliorer
+%la capacité de généralisation de REMT sur ces tâches de classification.
+%
+%
+%\subsection{Arbres de décision partiellement monotones} 
+%
+%Les algorithmes étudiés précédemment font l'hypothèse que tous les attributs
+%sont monotones par rapport à la classe. Néanmoins, la plupart des tâches de
+%classification avec contrainte de monotonie comportent deux sortes d'attributs :
+%ceux dont les valeurs sont linéairement ordonnées selon les valeurs de la classe
+%(les critères), et ceux n'ayant pas de relation monotone avec la classe (mais
+%qui permettent tout de même d'améliorer la performance du classifieur). Dans
+%\cite{pei-partially}, Pei et Hu proposent donc un algorithme de construction
+%d'arbres partiellement monotones permettant de gérer les deux types d'attributs
+%à la fois. 
+%
+%Pour cela, ils proposent une mesure d'inconsistence d'ordre, \emph{rank
+%inconsistency rate} (RIR), qui permet de distinguer les attributs ordinaires des
+%critères et de déterminer les sens des relations graduelles entre les critères
+%et la classe. Étant donnés $a_j \in A$ et $\lambda$, on définit :
+%
+%\begin{itemize}
+%    \item URIR (\emph{upward rank inconstency rate}), le RIR ascendant selon~$a_j$ :
+%        \begin{equation}
+%            URIR^{\leq}(a_j, \lambda) = -\frac{1}{|\Omega|} \sum_{i=1}^{n}\log_{2}
+%            \frac{|[\omega_i]^{\leq}_{a_j}| \times
+%            |[\omega_i]^{\geq}_{\lambda}|}{|\Omega| \times |[\omega_i]^{\leq}_{a_j}
+%            \cap [\omega_i]^{\geq}_{\lambda}|}
+%        \label{eq:URIR}
+%        \end{equation}
+%    \item DRIR (\emph{downward rank inconstency rate}), le RIR
+%        descendant selon~$a_j$ : 
+%        \begin{equation}
+%            DRIR^{\geq}(a_j, \lambda) = -\frac{1}{|\Omega|} \sum_{i=1}^{n}\log_{2}
+%            \frac{|[\omega_i]^{\geq}_{a_j}| \times
+%            |[\omega_i]^{\leq}_{\lambda}|}{|\Omega| \times |[\omega_i]^{\geq}_{a_j}
+%            \cap [\omega_i]^{\leq}_{\lambda}|}
+%        \label{eq:DRIR}
+%        \end{equation}
+%\end{itemize}
+%
+%$a_j$ croît avec $\lambda$ lorsque
+%$URIR^{\leq}(a_j,\lambda) = 0$, et décroît avec $\lambda$
+%quand $DRIR^{\geq}(a_j,\lambda) = 0$.
+%
+%La différence entre $URIR^{\leq}(a_j,\lambda)$ et $DRIR^{\geq}(a_j,\lambda)$
+%est représentée par :
+%
+%\begin{equation}
+%    diff_{a_j} = URIR^{\leq}(a_j,\lambda) - DRIR^{\geq}(a_j,\lambda)
+%\end{equation}
+%
+%Pei et Hu \cite{pei-partially} établissent un seuil $\delta \in [0,1]$
+%permettant de décider s'il existe une relation graduelle entre $a_j$ et
+%$\lambda$. Si $diff_{a_j} \in [-\delta, \delta]$, alors $a_j$ n'est pas monotone
+%par rapport à $\lambda$.  Sinon, si $diff_{a_j} \in [\delta, \infty[$, alors
+%$a_j$ décroît avec $\lambda$.  Au contraire, si $diff_{a_j} \in ]-\infty,
+%-\delta]$, alors $a_j$ croît avec $\lambda$.
+%
+%Ces mesures permettent de définir un algorithme capable de déterminer s'il
+%existe une relation graduelle entre chaque attribut et la classe ainsi que son
+%éventuel sens de variation.
+%
+%Afin de partitionner au mieux les données à chaque étape de construction de
+%l'arbre, les mesures de sélection d'attributs RMI et MI sont utilisées. 
+%
+%\noindent L'information mutuelle MI (\emph{Mutual Information}) correspond au degré de
+%consistence entre un attribut et les valeurs de la classe. L'information
+%mutuelle entre l'attribut $a_j$ et la classe $\lambda$ est défini par :
+%
+%\begin{equation}
+%    MI(a_j, \lambda) = -\frac{1}{|\Omega|} \sum_{i=1}^{n} \log_{2}
+%    \frac{|[\omega_i]_{a_j}|
+%    \times |[\omega_i]_{\lambda}|}{|\Omega| \times |[\omega_i]_{a_j} \cap
+%    [\omega_i]_{\lambda}|}
+%\label{eq:MI}
+%\end{equation}
+%
+%\noindent De plus, Pei et Hu \cite{pei-partially} utilisent le coefficient
+%d'information maximale MIC (\emph{Maximal Information Coefficient}) pour enlever
+%les attributs impertinents. Soient $X$ et $Y$ deux variables aléatoires, $|X|$
+%et $|Y|$ représentent le nombre d'intervalles sur les axes $X$ et $Y$. Le nombre
+%total d'intervalles n'excède pas une valeur $T$ spécifiée. MIC est défini par :
+%
+%\begin{equation}
+%    MIC(X, Y) = \max_{|X||Y| < T} \frac{MI(X,Y)}{\log_{2}(\min(|X|,|Y|))}
+%\label{eq:MIC}
+%\end{equation}
+%
+%À l'aide de ces mesures, les auteurs développent PMDT (\emph{Partially
+%Monotonic Decision Trees}), un algorithme de construction d'arbres partiellement
+%monotones. Comme les autres méthodes, celle-ci ne considère que les arbres
+%binaires où à chaque noeud interne correspond un attribut. Elle ne gère que les
+%attributs numériques, et les valeurs de classe doivent être ordonnées. \\
+%
+%Soient $\epsilon$ le seuil minimal pour MI (\eqref{eq:MI}) et RMI
+%(\eqref{eq:RMI}), et $n_{min}$ la taille minimale pour $\Omega_{\alpha}$.
+%
+%À chaque étape de l'induction :
+%\begin{itemize}
+%    \item Les éléments $\omega_i \in \Omega_{\alpha}$ sont normalisés.
+%    \item Les attributs impertinents sont retirés avec $MIC$ (équation
+%        \eqref{eq:MIC}) afin d'obtenir $\Omega_{\alpha}'$.
+%    \item Les attributs monotones et les attributs non-monotones sont
+%        différenciés en utilisant $RIR$ (\eqref{eq:URIR} et \eqref{eq:DRIR}).
+%    \item Si tous les éléments de $\Omega_{\alpha}'$ appartiennent à la même classe~$c$,
+%        alors une feuille est créée et on lui assigne la classe ~$c$.
+%    \item Sinon, si $|\Omega_{\alpha}'| < n_{min}$ alors une feuille est créée et
+%        on lui assigne la classe majoritaire dans $\Omega_{\alpha}'$.
+%    \item Sinon
+%        \begin{itemize}
+%            \item si le noeud courant n'est pas plus pur que son noeud parent,
+%                alors le seuil générant la meilleure partition selon MI
+%                (\eqref{eq:MI}) est récupéré.
+%            \item sinon, le seuil générant la meilleure partition selon RMI
+%                (\eqref{eq:RMI}) est récupéré.
+%        \end{itemize}
+%    \item Si la partition obtenue est vide ou la valeur de MI ou de RMI est plus
+%        petite que $\epsilon$, alors la construction de l'arbre est arrêtée.
+%    \item Sinon, la même procédure est répétée sur les sous-ensembles de la
+%        partition. \\
+%\end{itemize}
+%
+%\subsubsection{Évaluation et validation du modèle}
+%
+%L'évaluation des modèles est effectuée avec le taux de bonne classification
+%(\eqref{eq:cci}) et MAE (\eqref{eq:MAE}).\\
+%
+%Pei et Hu \cite{pei-partially} comparent PMDT à des méthodes basées sur la
+%structure formelle DRSA (\emph{dominance-based rough set approach}) DIR-DOMLEM,
+%VC-DomLEM (\cite{blaszczynski-sequential}, \cite{blaszczynski-induction},
+%\cite{wang-induction}), ainsi que des algorithmes de construction d'arbres de
+%décisions tels REMT, RGMT, OLM et OSDL. Ils récupèrent 12 bases réelles dans
+%lesquelles le sens de variation des critères n'est pas connu, et les
+%pré-traitent : normalisation des attributs, suppression des données incomplètes,
+%et transformation des attributs décroissants avec la classe en attributs
+%croissants.
+%
+%Les expériences menées montrent que PMDT arrive à gérer à la fois les attributs
+%non monotones et les critères, et garde les attributs les plus pertinents pour
+%la construction de l'arbre. MI et RMI gèrent mieux les critères et attributs
+%non-monotones que DomLEM et VC-DomLEM, et permettent d'améliorer
+%significativement les performances de classification en termes de taux de bonne
+%classification et de MAE. De plus, en considérant le fait que les données
+%puissent être totalement monotones ou non, PMDT produit également de meilleurs
+%résultats que REMT, RGMT, OLM et OSDL sur la plupart des tâches de
+%classification traitées.
+%
+%\subsection{Comparaison des approches}
+%
+%\textcolor{red}{À compléter} % à compléter
+%
+%
+%\section{Etude théorique des propriétés des mesures de discrimination d'ordre}
+%Marsala et Petturiti définissent dans \cite{marsala-rank} un modèle de
+%construction hiérarchique de mesures de discrimination d'ordre. Ce modèle a pour
+%but d'isoler les propriétés qu'une fonction doit avoir pour être une telle
+%mesure. Il sert aussi de base pour en créer de nouvelles. \\
+%
+%Soit $H^*$ une mesure de discrimination d'ordre. On rappelle que le pouvoir de
+%discrimination de l'attribut $a_j$ envers la classe $\lambda$ peut se décomposer
+%de la façon suivante :
+%
+%$$ H^*(\lambda|a_j) = h^*(g^*(f^*(\omega_1),...,g^*(f^*(\omega_n))))$$
+%
+%où $f^*$ est une mesure de la monotonie locale de l'objet, $g^*$ une mesure
+%de non-monotonie de l'objet, et $h^*$ une agrégation des mesures $g^*$.
+%
+%Pour que $H^*$ soit une mesure de discrimination d'ordre, chaque couche doit
+%satisfaire certaines conditions.
+%
+%Soient $f^*, g^*, h^*$ les trois couches de $H^*$. 
+%%Les propriétés suivantes des
+%%fonctions $f^*$, $g^*$, et $h^*$ sont respectivement démontrées en annexe
+%%\ref{appendix:demo-f}, \ref{appendix:demo-g}, \ref{appendix:demo-h}:
+%$f^*$, $g^*$, et $h^*$ doivent, respectivement, satisfaire les conditions suivantes :
+%
+%\begin{itemize}
+%    \item Pour tout $\omega_i \in \Omega$,
+%    \begin{itemize}
+%        \item \textbf{(F1)} $mindsr(\omega_i) \leq f^*(\omega_i) \leq maxdsr(\omega_i)$,
+%        \item \textbf{(F2)} si $f^*(\omega_i) = 1$ alors $a_j(\omega_i) \leq a_j(\omega_h)
+%            \Rightarrow \lambda(\omega_i) \leq \lambda(\omega_h)$, pour tout
+%            $\omega_h \in \Omega$,
+%        \item \textbf{(F3)} si $[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j} \subseteq
+%        [\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}$ et
+%        $[\omega_i]_{a_j} = [\omega_h]_{a_j}$, alors $f^*(\omega_i) \leq
+%        f^*(\omega_h)$. 
+%    \end{itemize}
+%    
+%    De ces propriétés, on déduit : 
+%    \begin{equation}
+%        \frac{1}{n} \leq f^*_P(\omega_i) \leq f^*_G(\omega_i) \leq f^*_S(\omega_i)
+%        \leq 1 
+%    \label{eq:eq-f}
+%    \end{equation}
+%
+%    \item Soit $f_i = f^*(\omega_i)$,
+%    \begin{itemize}
+%        \item \textbf{(G1)} $g^*(f_i) \in [0, +\infty)$,
+%        \item \textbf{(G2)} $g^*$ est une fonction strictement décroissante,
+%        \item \textbf{(G3)} $g^*(1) = 0$.
+%    \end{itemize}
+%
+%    D'après l'~\eqref{eq:eq-f}, on obtient :
+%
+%    \begin{equation}
+%        g^*_G(f^*_G(\omega_i)) \leq g^*_S(f^*_S(\omega_i)) \leq
+%        g^*_P(f^*_P(\omega_i))
+%    \label{eq:eq-g}
+%    \end{equation}
+%
+%    \item Soit $g_i = g^*(f^*(\omega_i))$,
+%    \begin{itemize}
+%        \item \textbf{(H1)} $h^*(g_1,...,g_n) \in [0, +\infty)$,
+%        \item \textbf{(H2)} $h^*(g_1,...,g_n) = h^*(g_{\sigma
+%            (1)},...,h^*(g_{\sigma (n)}$ pour toute permutation $\sigma$,
+%        \item \textbf{(H3)} si $g_i \leq g_i'$, alors $h^*(g_1,...,g_i,...,g_n)
+%            \leq h^*(g_1,...,g_i',...,g_n)$, 
+%        \item \textbf{(H4)} $h^*(g_1,...,g_n) = 0$ si et seulement si $g_i = 0$
+%            pour $i=1,...,n$.\\
+%    \end{itemize}
+%\end{itemize}
+%
+%\textbf{(F1)-(F3)}, \textbf{(G1)-(G3)}, \textbf{(H1)-(H4)}, l'\eqref{eq:eq-f}, et
+%l'\eqref{eq:eq-g} sont, respectivement, démontrées en annexes
+%\ref{appendix:demo-f}, \ref{appendix:demo-g}, \ref{appendix:demo-h},
+%\ref{appendix:demo-eqf}, et \ref{appendix:demo-eqg}.\\
+%
+%La proposition suivante est également démontrée en annexe \ref{appendix:prop1}: 
+%
+%\begin{prop}
+%    \begin{enumerate}
+%        \item $H^*_G(\lambda|a_j) \leq H^*_S(\lambda|a_j) \leq
+%            H^*_P(\lambda|a_j)$
+%        \item $0 \leq H^*_G(\lambda|a_j) < \frac{n-1}{n}$
+%        \item $0 \leq H^*_S(\lambda|a_j) < \log_{2}(n)$
+%        \item $0 \leq H^*_P(\lambda|a_j) < n \log_{2}(n)$
+%    \end{enumerate}
+%\label{prop:prop1}
+%\end{prop}
+%
+%Le théorème suivant prouvant qu'une mesure de discrimination $H^*$ atteint son
+%minimum si et seulement si $\lambda$ est monotone par rapport à $a_j$ est
+%démontré en annexe \ref{appendix:thm}.
+%
+%\begin{thm}
+%
+%Soient $f^*$, $g^*$, et $h^*$ des fonctions satisfaisant respectivement les
+%    conditions \textbf{(F1)-(F3)}, \textbf{(G1)-(G3)}, \textbf{(H1)-(H4)}.
+%    $H^*(\lambda|a_j) = 0$ si et seulement si $\lambda$ est monotone par rapport
+%    à $a_j$, c'est-à-dire, pour tout $\omega_i, \omega_h \Omega$,
+%
+%    $$ a_j(\omega_i) \leq a_j(\omega_j) \Rightarrow \lambda(\omega_i) \leq
+%    \lambda(\omega_h) $$
+%\label{thm:thm-H}
+%\end{thm}
+%
+%Soit $H^*$ une mesure de discrimination construite à l'aide de fonctions $f^*$,
+%$g^*$, $h^*$ respectant les propriétés susmentionnées. On souhaite étudier le
+%sens de variation de $H^*$ lorsque l'on modifie $[\omega_i]^{\leq}_{\lambda}$ ou
+%$[\omega_i]^{\leq}_{a_j}$, pour $\omega_i \in \Omega$. \\
+%
+%\begin{itemize}
+%    \item Si $f^* = dsr$ :
+%    \begin{enumerate}
+%        \item 
+%        Soit $\omega_h \in [\omega_i]^{\leq}_{\lambda} \cap
+%        [\omega_i]^{\leq}_{a_j}$, et $\lambda' : \Omega \to C$ tels que
+%        $\lambda'(\omega_h) < \lambda(\omega_i)$ et, pour tout
+%        $\omega_h' \neq \omega_h$, $\lambda'(\omega_h') = \lambda(\omega_h')$.
+%
+%        \begin{IEEEeqnarray*}{rCl"s}
+%            \textrm{Alors }|[\omega_i]^{\leq}_{\lambda'}| &<& |[\omega_i]^{\leq}_{\lambda}| \\
+%            \textrm{et }|[\omega_i]^{\leq}_{\lambda'} \cap [\omega_i]^{\leq}_{a_j}| &<&
+%            |[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j}| \\
+%            \textrm{d'où }\frac{|[\omega_i]^{\leq}_{\lambda'} \cap
+%            [\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} &<&
+%            \frac{|[\omega_i]^{\leq}_{\lambda} \cap
+%            [\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} \\
+%            g_i' = g^*(\frac{|[\omega_i]^{\leq}_{\lambda'} \cap
+%            [\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|}) &>& g^*(\frac{|[\omega_i]^{\leq}_{\lambda} \cap
+%            [\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|}) = g_i &
+%            \textrm{ (G2)}\\
+%            h^*(g_1,...,g_i',...,g_n) &>& h^*(g_1,...,g_i,...g_n) & \textrm{ (H3)}\\
+%            H^*(\lambda'|a_j) &>& H^*(\lambda|a_j)
+%        \end{IEEEeqnarray*}
+%        
+%    \item Soit $\omega_h \in [\omega_i]^{\leq}_{\lambda}$ et $\omega_h \not\in
+%        [\omega_i]^{\leq}_{a_j}$. Posons $\lambda': \Omega \to C$ tel que
+%            $\lambda'(\omega_h) < \lambda(\omega_i)$ et, pour tout $\omega_h'
+%            \neq \omega_h$, $\lambda'(\omega_h') = \lambda(\omega_h)$.
+%
+%        \begin{IEEEeqnarray*}{rCl"s}
+%            \textrm{Alors }|[\omega_i]^{\leq}_{\lambda'}| &<& |[\omega_i]^{\leq}_{\lambda}| \\
+%            \textrm{puis }|[\omega_i]^{\leq}_{\lambda'} \cap [\omega_i]^{\leq}_{a_j}| &=&
+%            |[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j}|
+%            \textrm{ car } \omega_h \not\in [\omega_i]^{\leq}_{\lambda} \cap
+%            [\omega_i]^{\leq}_{a_j}\\
+%            \textrm{donc } H^*(\lambda'|a_j) &=& H^*(\lambda|a_j)
+%        \end{IEEEeqnarray*}
+%    
+%    \item  Soit $\omega_h \in [\omega_i]^{\leq}_{a_j}$ et $\omega_h \not\in
+%        [\omega_i]^{\leq}_{\lambda}$. Posons $a_j': \Omega \to X_j'$ tel que
+%            $a_j'(\omega_h) < a_j(\omega_i)$ et, pour tout $\omega_h'
+%            \neq \omega_h$, $a_j'(\omega_h') = a_j(\omega_h)$.
+%
+%        \begin{IEEEeqnarray*}{rCl"s}
+%            \textrm{Alors }|[\omega_i]^{\leq}_{a_j'}| &<& |[\omega_i]^{\leq}_{a_j}| \\
+%            \textrm{et }|[\omega_i]^{\leq}_{\lambda} \cap
+%            [\omega_i]^{\leq}_{a_j'}| &=&
+%            |[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j}| \\
+%            \textrm{d'où }\frac{|[\omega_i]^{\leq}_{\lambda} \cap
+%            [\omega_i]^{\leq}_{a_j'}|}{|[\omega_i]^{\leq}_{a_j'}|} &>&
+%            \frac{|[\omega_i]^{\leq}_{\lambda} \cap
+%            [\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} \\
+%            g_i' = g^*(\frac{|[\omega_i]^{\leq}_{\lambda} \cap
+%            [\omega_i]^{\leq}_{a_j'}|}{|[\omega_i]^{\leq}_{a_j'}|}) &<& g^*(\frac{|[\omega_i]^{\leq}_{\lambda} \cap
+%            [\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|}) = g_i & \textrm{ (G5)}\\
+%            h^*(g_1,...,g_i',...,g_n) &<& h^*(g_1,...,g_i,...,g_n) & \textrm{ (H3)}\\
+%            \textrm{d'où } H^*(\lambda|a_j') &<& H^*(\lambda|a_j)\\
+%        \end{IEEEeqnarray*}
+%
+%    \end{enumerate}
+%
+%    \item Si $f^* = mindsr, maxdsr, avgdsr$ : 
+%    \begin{enumerate}
+%        \item Soit $\omega_l \in [\omega_i]^{\leq}_{a_j}$ et $\omega_l \not\in
+%            [\omega_i]_{a_j}$.
+%
+%        Notons $a_j': \Omega \to X_j'$ tel que
+%            $a_j'(\omega_l) < a_j(\omega_l)$ et, pour tout $\omega_h' \neq
+%            \omega_l$, $a_j'(\omega_h') = a_j(\omega_h')$.
+%
+%        \begin{IEEEeqnarray*}{rCl"s}
+%            \textrm{On a } min_{\omega_h \in
+%            [\omega_i]_{a_j'}}|[\omega_h]^{\leq}_{\lambda} \cap
+%            [\omega_h]^{\leq}_{a_j'}| &=& min_{\omega_h \in
+%            [\omega_i]_{a_j}}|[\omega_h]^{\leq}_{\lambda} \cap
+%            [\omega_h]^{\leq}_{a_j}| \\
+%            \textrm{et } |[\omega_i]^{\leq}_{a_j'}| &<&
+%            |[\omega_i]^{\leq}_{a_j}|\\
+%            \textrm{donc } \frac{min_{\omega_h \in
+%            [\omega_i]_{a_j'}}|[\omega_h]^{\leq}_{\lambda} \cap
+%            [\omega_h]^{\leq}_{a_j'}|}{|[\omega_i]^{\leq}_{a_j'}|} &>&
+%            \frac{min_{\omega_h \in
+%            [\omega_i]_{a_j}}|[\omega_h]^{\leq}_{\lambda} \cap
+%            [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|}\\
+%            \textrm{d'où } H^*(\lambda|a_j') &<& H^*(\lambda|a_j)\\
+%        \end{IEEEeqnarray*}
+%
+%        Le même raisonnement est appliqué pour $maxdsr$ et $avgdsr$.
+%
+%        \item Soit $\omega_l \in [\omega_i]_{a_j}$. 
+%            
+%        \begin{enumerate}[label=\alph*)]
+%            
+%            \item 
+%                Notons $a_j': \Omega \to
+%                X_j'$ tel que $a_j'(\omega_l) > a_j(\omega_l)$ et, pour tout
+%                $\omega_h' \neq \omega_l$, $a_j'(\omega_h') = a_j(\omega_h')$. On
+%                obtient $|[\omega_i]^{\leq}_{a_j'}| = |[\omega_i]^{\leq}_{a_j}|$.
+%
+%            \begin{itemize}
+%                \item Si $|[\omega_l]_{a_j}| = min_{\omega_h \in
+%                [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda} \cap
+%                [\omega_h]^{\leq}_{a_j}|$,
+%
+%                \begin{IEEEeqnarray*}{rCl"s}
+%                    \textrm{alors } min_{\omega_h \in [\omega_i]_{a_j'}}
+%                    |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j'}|&\geq&
+%                    min_{\omega_h \in [\omega_i]_{a_j}}
+%                    |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}| \\
+%                    \frac{min_{\omega_h \in [\omega_i]_{a_j'}}
+%                    |[\omega_h]^{\leq}_{\lambda} \cap
+%                    [\omega_h]^{\leq}_{a_j'}|}{|[\omega_i]^{\leq}_{a_j'}|}&\geq&
+%                    \frac{min_{\omega_h \in [\omega_i]_{a_j}}
+%                    |[\omega_h]^{\leq}_{\lambda} \cap
+%                    [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} \\
+%                    \textrm{et donc } H^*(\lambda|a_j') &\leq& H^*(\lambda|a_j)\\
+%                \end{IEEEeqnarray*}
+%        
+%                \item Sinon,
+%
+%                \begin{IEEEeqnarray*}{rCl"s}
+%                    min_{\omega_h \in [\omega_i]_{a_j'}}
+%                    |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j'}| &=&
+%                    min_{\omega_h \in [\omega_i]_{a_j}}
+%                    |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}| \\
+%                    \frac{min_{\omega_h \in [\omega_i]_{a_j'}}
+%                    |[\omega_h]^{\leq}_{\lambda} \cap
+%                    [\omega_h]^{\leq}_{a_j'}|}{|[\omega_i]^{\leq}_{a_j'}|} &=&
+%                    \frac{min_{\omega_h \in [\omega_i]_{a_j}}
+%                    |[\omega_h]^{\leq}_{\lambda} \cap
+%                    [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} \\
+%                    \textrm{et donc } H^*(\lambda|a_j') &=& H^*(\lambda|a_j)\\
+%                \end{IEEEeqnarray*}
+%
+%            \end{itemize}
+%            On applique le même raisonnement pour $maxdsr$.
+%
+%            \textcolor{red}{À compléter pour $avgdsr$} % À COMPLÉTER
+%
+%    \item Posons $a_j': \Omega \to X_j'$ tel que $a_j'(\omega_l) <
+%        a_j(\omega_i)$ et $a_j'(\omega_h') = a_j(\omega_h')$ pour tout $\omega_h
+%                \neq \omega_l$. On obtient $|[\omega_i]^{\leq}_{a_j'}| <
+%                |[\omega_i]^{\leq}_{a_j}|$.
+%
+%            \textcolor{red}{À compléter} % À COMPLÉTER
+%
+%    \end{enumerate}
+%    \end{enumerate}
+%\end{itemize}
+%
+%\section{Implémentation et expérimentation de l'algorithme de construction
+%d'arbres monotones} 
+%
+%Durant ce stage, une librairie de fonctions a été implémenté pour la construction
+%ainsi que l'étude expérimentale d'arbres de décision.  On se base
+%essentiellement sur RDMT(H), donné dans \cite{marsala-rank}, pour construire des
+%arbres de décision monotones, que l'on évalue sur des données artificielles et
+%réelles. Le code est implémenté en Python 3.6 et les librairies numpy
+%\cite{walt-numpy}, matplotlib \cite{hunter-matplotlib} et scikit-learn
+%\cite{scikit-learn} sont utilisées.
+%
+%\subsection{Mesures de discrimination d'ordre} 
+%
+%On implémente le modèle de construction hiérarchique proposé par Marsala et
+%Petturiti \cite{marsala-rank}. On rappelle que le pouvoir de discrimination de
+%l'attribut $a_j$ envers la classe $\lambda$ selon une mesure de discrimination
+%$H^*$ peut s'écrire de la façon suivante :
+%
+%$$ H^*(\lambda | a_j) = h^*(g^*(f^*(\omega_1)),...,g^*(f^*(\omega_n)))$$
+%
+%\noindent Toutes les fonctions $f^*$, $g^*$, $h^*$ présentées dans l'article
+%sont codées.  Pour chaque fonction $f^*$, on distingue le cas où la mesure
+%construite détecte la monotonie (elle considère les ensembles dominants) du
+%cas contraire (elle considère les classes d'équivalences). \\
+%
+%Par exemple, étant donnés $a_j \in \mathcal{A}$ et $\lambda$, l'entropie
+%conditionnelle de Shannon se réécrit de la façon suivante :
+%
+%\begin{equation}
+%    H_S(\lambda | a_j) = \sum_{i=1}^{n} \frac{1}{n} (-\log_{2}
+%    (\frac{|[\omega_i]_{\lambda} \cap [\omega_i]_{a_j}|}{|[\omega_i]_{a_j}|}))
+%\label{eq:shannon}
+%\end{equation}
+%
+%
+%où $f^*(\omega_i) = \frac{|[\omega_i]_{\lambda} \cap
+%[\omega_i]_{a_j}|}{|[\omega_i]_{a_j}|}, g^*(\omega_i) = -\log_{2}
+%(f^*(\omega_i))$, et $h^*(\omega_i) = \sum_{i=1}^{n} \frac{1}{n}
+%g^*(f^*(\omega_i))$ \\
+%
+%Sa version tenant compte la monotonie, l'entropie de Shannon d'ordre, est
+%définie de la façon suivante :
+%
+%\begin{equation}
+%    H^*_S(\lambda | a_j) = \sum_{i=1}^{n} \frac{1}{n} (-\log_{2} (dsr(\omega_i))
+%\label{eq:rank-shannon}
+%\end{equation}
+%
+%où $f^*(\omega_i) = dsr(\omega_i) = \frac{|[\omega_i]^{\leq}_{\lambda} \cap
+%[\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|}$, et $g^*$ et $h^*$ sont
+%les mêmes que précédemment. \\
+%
+%\subsubsection{Aspects calculatoires}
+%
+%Les ensembles dominants et classes d'équivalence servant de base pour le calcul
+%de $f^*(\omega_i)$, pour tout $\omega_i \in \Omega$, le stockage de ces
+%structures joue un rôle important dans la complexité du critère de
+%partitionnement.
+%
+%Étant donnés $\Omega = \{\omega_i, ... , \omega_n\}, \mathcal{A} = \{a_1, ...,
+%a_m\}, \lambda$, et $j \in \{1, ..., m\}$ fixé, on stocke les ensembles
+%dominants générés par l'attribut $a_j$ (respectivement la fonction d'étiquetage $\lambda$) dans une matrice notée~$A$ (respectivement~$D$) de taille $n \times n$. Pour tout $i,
+%h \in \{1,...,n\}$,
+%\begin{itemize} 
+%    \item $A_{ih} = 1$ si et seulement si $a_j(\omega_i) \leq
+%    a_j(\omega_h)$.
+%    \item $D_{ih}= 1$ si et seulement si~$\lambda(\omega_i) \leq \lambda(\omega_h)$.
+%\end{itemize}
+%A (respectivement D) est donc rempli en itérant sur chaque $\omega_i \in \Omega$
+%et en assignant à chaque ligne $A_i$ (respectivement $D_i$) l'ensemble
+%$\{\omega_h : a_j(\omega_i) \leq a_j(\omega_h)\}$ (respectivement $\{\omega_h :
+%\lambda(\omega_i) \leq \lambda(\omega_h)\}$). Récupérer ce dernier se fait en
+%temps $\mathcal{O}(n)$. On construit donc A et D en temps $\mathcal{O}(n^2)$.
+%Comme les valeurs sont stockées dans une matrice de taille $n \times n$, la
+%complexité spatiale est aussi en $\mathcal{O}{n^2}$.
+%
+%En ce qui concerne les classes d'équivalence, pour tout $i, h \in \{1,...,n\}$,
+%\begin{itemize}
+%    \item $A_{ih} = 1$ si et seulement si $a_j(\omega_i) = a_j(\omega_h)$
+%    \item $D_{ih} = 1$ si et seulement si $\lambda(\omega_i) = \lambda(\omega_h)$. 
+%\end{itemize}
+%La procédure de construction est la même que celle donnée
+%précédemment, en remplaçant l'inégalité par l'égalité. On obtient les mêmes
+%complexités temporelle et spatiale. Comme les algorithmes maniant les ensembles
+%dominants et ceux utilisant les classes d'équivalence partagent les mêmes
+%complexités, on étudiera uniquement les fonctions faisant intervenir les
+%ensembles dominants. 
+%
+%Pour $a_j$ et $\lambda$ fixés, ~$A$ et~$D$ ne sont calculés qu'une seule fois car
+%$[\omega_i]^{\leq}_{a_j}$ et $[\omega_i]^{\leq}_{\lambda}$ restent constants,
+%pour tout $\omega_i \in \Omega$. \\
+%
+%On s'intéresse maintenant au calcul de $f^*(\omega_i)$, qu'on appelera également
+%*-$dsr(\omega_i)$.
+%Afin de calculer $dsr(\omega_i)$, on récupère $[\omega_i]^{\leq}_{a_j}$ et
+%$[\omega_i]^{\leq}_{\lambda}$ à l'aide de~$A$ et~$D$ en temps $\mathcal{O}(n)$. Le calcul de
+%$[\omega_i]_{a_j} \cap [\omega_i]_{\lambda}$ se faisant aussi en $\mathcal{O}(n)$,
+%calculer $dsr(\omega_i)$ se fait en temps $\mathcal{O}(n)$. L'espace occupé est
+%en $\mathcal{O}(n)$.
+%En revanche, le calcul de $maxdsr(\omega_i), mindsr(\omega_i)$ et
+%$avgdsr(\omega_i)$ nécessite d'itérer sur chaque $\omega_h \in
+%[\omega_i]_{a_j}$. Les complexités temporelle et spatiale de ces fonctions sont
+%donc en $\mathcal{O}(n^2)$. \\
+%
+%Toutes les fonctions $g^*$ implémentées étant des transformations strictement
+%décroissantes de $f^*$, elles ont une complexité temporelle et spatiale en
+%$\mathcal{O}(1)$. 
+%
+%Les fonctions $h^*$ étant des agrégations des couches $g^*$ correspondant à
+%chaque élément de $\Omega$, leur complexité
+%temporelle et spatiale est en $\mathcal{O}(n)$.
+%
+%Étant donnés $a_j \in \mathcal{A}$, le calcul de $H^*(\lambda|a_j)$ a donc pour
+%complexité temporelle et spatiale $\mathcal{O}(n^2)$ lorsque $f^* = dsr$, et
+%$\mathcal{O}(n^3)$ lorsque $f^* \in \{mindsr, maxdsr, avgdsr\}$.
+%
+%\subsubsection{Expériences}
+%
+%Afin d'observer le comportement des *-dsr sur un attribut monotone, on génère
+%une base de 100 points à deux classes, deux dimensions dont une seule est
+%monotone par rapport à la classe.  Ici, la valeur de l'attribut monotone et
+%celle de la classe croissent en fonction de l'indice de l'élément. On duplique
+%et bruite la même base de sorte à obtenir des bases bruitées à 0\%, 25\%, 50\%,
+%75\%.  Les courbes \ref{img:dsr0}, \ref{img:dsr25}, \ref{img:dsr50}, et
+%\ref{img:dsr75} tracent la valeur de $dsr(\omega_i)$ en fonction de i pour
+%chaque base. \\
+%
+%\begin{figure}[H]
+%	\centering
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering
+%        \includegraphics[width=\textwidth]{images/dsr_0.png}
+%        \caption{Valeur de dsr en fonction de l'indice de l'objet pour une base
+%        non-bruitée}
+%        \label{img:dsr0}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering
+%	    \includegraphics[width=\textwidth]{images/dsr_25.png}
+%        \caption{Valeur de dsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 25\%}
+%        \label{img:dsr25}
+%    \end{subfigure}
+%
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering 
+%	    \includegraphics[width=\textwidth]{images/dsr_50.png}
+%        \caption{Valeur de dsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 50\%}
+%        \label{img:dsr50}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%    	\centering
+%    	\includegraphics[width=\textwidth]{images/dsr_75.png}
+%        \caption{Valeur de dsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 75\%}
+%        \label{img:dsr75}
+%    \end{subfigure}
+%\caption{Courbes de $dsr$ en fonction du taux de bruit non-monotone}
+%\end{figure}
+%
+%Dans la base non bruitée, dsr($\omega_i$) = 1 pour chaque $\omega_i \in \Omega$.
+%En effet, on a $a_j(\omega_i) \leq a_j(\omega_h) \Rightarrow \lambda(\omega_i)
+%\leq \lambda(\omega_h)$ si et seulement si $\{\omega_h \in \Omega :
+%\lambda(\omega_i) \leq \lambda(\omega_h) \land a_j(\omega_i) \leq
+%a_j(\omega_h)\} = \{\omega_h \in \Omega : a_j(\omega_i) \leq a_j(\omega_h)\}$ si
+%et seulement si $\frac{| [\omega_i]^{\leq}_{\lambda} \cap
+%[\omega_i]^{\leq}_{a_j}|}{| [\omega_i]^{\leq}_{a_j} |} = 1 $.
+%
+%\noindent En revanche, plus le taux de bruit dans la base augmente, plus on observe de
+%"pics". En effet, on observe davantage de $\omega_i$ tels que $ \{\omega_h \in
+%\Omega : a_j(\omega_i) \leq a_j(\omega_h)\} $ est modifié, et donc  $|
+%\{\omega_h \in \Omega : \lambda(\omega_i) \leq \lambda(\omega_h) \land
+%a_j(\omega_i) \leq a_j(\omega_h)\} | \leq | \{\omega_h \in \Omega :
+%a_j(\omega_i) \leq a_j(\omega_h)\} |$.
+%
+%\noindent Les courbes des autres *-dsr sont données en annexe \ref{appendix:dsr}.\\
+%
+%On s'intéresse maintenant à une partie des mesures $H^*$ définies dans
+%\cite{marsala-rank} : $H^*_S$ (\eqref{eq:rank-shannon}), $H_S$
+%(\eqref{eq:shannon}), $H^*_G$, $H_G$, $H^*_P$, $H^*_M$, et $H_Q$. On étudie,
+%pour chaque couple de mesures de discrimination (H, H'), l'évolution de H' en
+%fonction de H pour 3 et 5 classes.  \\ Pour cela, on génère aléatoirement, pour
+%chaque nombre de classes, 100 bases de 100 exemples à un attribut monotone par
+%rapport à la classe. Pour chaque base, on récupère les seuils de coupure
+%engendrés par la discrétisation de l'attribut (étape décrite dans la section
+%suivante) et, pour chaque mesure, on enregistre les valeurs obtenues pour chaque
+%seuil.\\ Les figures \ref{img:H_3} et \ref{img:H_5} tracent les corrélations
+%entre chaque mesure de discrimination. \\
+%
+%\begin{figure}[H]
+%	\center 
+%	\includegraphics[width=1\textwidth]{images/H_3.png}
+%    \caption{H' en fonction de H (3 classes)}
+%    \label{img:H_3}
+%\end{figure}
+%
+%\begin{figure}[H]
+%	\center 
+%	\includegraphics[width=1\textwidth]{images/H_5.png}
+%    \caption{H' en fonction de H (5 classes)}
+%    \label{img:H_5}
+%\end{figure}
+%
+%Pour chaque cas, on remarque que les mesures suivantes sont corrélées
+%linéairement :
+%\begin{itemize}
+%    \item $H^*_S$ et $H^*_G$
+%    \item $H_G$ et $H_S$
+%\end{itemize}
+%
+%Et les mesures suivantes sont corrélées quadratiquement :
+%\begin{itemize}
+%    \item $H_P$ et $H_M$
+%    \item $H_Q$ et $H^*_S$
+%\end{itemize}
+%
+%\subsection{Algorithme de construction d'arbres de décision paramétré par une
+%mesure de discrimination}
+%
+%\subsubsection{Construction du modèle}
+%
+%En reprenant essentiellement RDMT \cite{marsala-rank},
+%l'\algoref{appendix:build-tree} donné en annexe est un classifieur paramétré par
+%une mesure de discrimination $H$ (d'ordre ou non) et par 3 critères d'arrêt.
+%Comme RDMT, cet algorithme ne produit pas un arbre globalement monotone.
+%Néanmoins, si les données sont monotone-consistentes, i.e. tous les attributs
+%sont monotones par rapport à la classe, et si $H$ tient compte de la relation
+%graduelle entre les valeurs d'attributs et les valeurs de classe, alors cette
+%méthode garantit une forme plus faible de monotonie (appelée \emph{rule
+%monotonicity} \cite{hu-rank}). 
+%
+%RDMT et notre algorithme diffèrent sur plusieurs points :
+%\begin{itemize}
+%    \item On ne traite pas les attributs non numériques
+%    \item Lorsqu'une feuille est créée, on lui assigne la classe majoritaire parmi les exemples ayant servi à sa
+%construction
+%    \item On distingue deux mesures de discrimination: l'une doit
+%être minimisée pour le partitionnement et l'autre permet de déterminer l'arrêt.
+%        Dans la suite, la deuxième mesure utilisée sera toujours $H_S$
+%        (\eqref*{eq:shannon}).
+%\end{itemize}
+%
+%Comme l'on se restreint à des arbres de décision binaires, les données doivent
+%être partitionnées en deux sous-ensembles à chaque étape de l'induction. Cette
+%partition se fait en divisant l'ensemble courant $\Omega_{\alpha}$ selon
+%l'attribut $a^*$ qui respecte le plus la contrainte de monotonie, i.e., celui
+%dont la valeur $x^*_{j_s}$ minimise $H(\lambda|a^{x_{j_s}}_j)$, pour $j=1,...,m,
+%s=1,...t_j-1$. 
+%
+%Etant donné une mesure de discrimination $H^*$, l'\algoref{appendix:discretize}
+%\emph{DISCRETIZE}, donné en annexe, permet de récupérer, pour chaque $a_j \in
+%\mathcal{A}$, le seuil de coupure minimisant la valeur de $H$ ainsi que cette
+%dernière. On parcourt tous les seuils de coupure $x_{j_s}$ de $a_j$ pour trouver
+%$x^*_{j}$ minimisant $H(\lambda|a^{x_{j_s}}_j)$, soit :
+%
+%$$ x^*_{j} = arg\,min \{H(\lambda|a^{x_{j_s}}_j), s=1,...,t_j -1\}$$
+%
+%\subsubsection{Exemple sur une base de données jouets}
+%
+%Considérons la base de la figure \ref{img:artificial-dataset} contenant 60
+%points à deux dimensions x et y et à 3 classes. x est l'attribut dont les valeurs sont
+%monotones par rapport aux valeurs de la classe. Chaque classe est représentée
+%par le même nombre de points. La classe 1 est
+%représentée par les points bleus, la 2 par les points oranges, et la 3 par les
+%points verts. 
+%
+%\begin{figure}[H]
+%	\centering
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%	    \includegraphics[width=0.8\textwidth]{images/artificial-dataset.png}
+%        \caption{Base de données jouet}
+%        \label{img:artificial-dataset}
+%    \end{subfigure}
+%    \vfill
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%	    \includegraphics[width=0.8\textwidth]{images/threshold_rsdm.png}
+%    $$H^*_S(\lambda | \mathbf{x}) =  0.19 \leq H^*_S(\lambda | \mathbf{y}) =  0.53$$
+%        \caption{Seuil de coupure généré par $H^*_S$}
+%        \label{img:threshold_rsdm}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%	    \includegraphics[width=0.8\textwidth]{images/threshold_sdm.png}
+%        $$H_S(\lambda | \mathbf{x}) = H_S(\lambda | \mathbf{y}) =  0.67$$
+%        \caption{Seuil de coupure généré par $H_S$}
+%        \label{img:threshold_sdm}
+%    \end{subfigure}
+%\caption{Discrétisation sur une base de données jouets}
+%\end{figure}
+%
+%On observe sur les figures \ref{img:threshold_rsdm} et \ref{img:threshold_sdm}
+%les seuils de coupures générés respectivement par $H^*_S$ et $H_S$ sur cette
+%base jouet. On remarque que $H^*_S$ tient compte de la monotonie des valeurs de
+%la classe par rapport aux valeurs de l'attribut x : la valeur d'entropie
+%minimale calculée pour l'attribut x est inférieure à celle calculée pour
+%l'attribut y. Ce n'est cependant pas le cas pour $H_S$ qui est insensible à la
+%monotonie : la coupure optimale sur l'axe x génère la même valeur d'entropie que
+%celle faite sur l'axe y.
+%
+%\subsection{Analyse expérimentale} 
+%
+%Dans cette section, on cherche à comparer entre eux les arbres obtenus par
+%différentes mesure de discrimination.
+%L'objectif est d'évaluer l'impact du critère de partitionnement sur les
+%performances des classifieurs en termes de taux de bonne classification et de
+%monotonie. On étudie également l'évolution de ces performances en fonction du
+%taux de bruit non-monotone. 
+%
+%Dans les expériences menées, les arbres sont construits avec
+%l'\algoref{appendix:build-tree}, en faisant varier la mesure de discrimination.
+%Ils sont testés sur des bases artificielles et réelles. 
+%
+%\subsubsection{Expérimentation sur des bases artificielles}
+%
+%On compare, dans cette section, les mesures $H^*_S$ et $H_S$. On souhaite
+%déterminer si les arbres produits par ces deux mesures offrent des résultats
+%significativement différents l'un de l'autre concernant :
+%
+%\begin{itemize}
+%    \item les indices suivants de performance : 
+%    \begin{itemize}
+%        \item le taux de bonne classification (\eqref*{eq:cci}), appelée accuracy
+%        par la suite,
+%       
+%        \item le ratio moyen entre le nombre d'exemples non-monotones dans les
+%            paires de feuilles et le nombre de paires d'exemples dans les paires
+%            de feuilles (appelée ratio de paires de feuilles non-monotones par
+%            la suite), défini par :
+%
+%        \begin{equation}
+%            r = \frac{1}{\sum_{i=1}^{p} n_i} \sum{n_i}{r_i}
+%        \label{eq:ratio}
+%        \end{equation}
+%
+%        où $r_i$ correspond au ratio entre le nombre de paires d'exemples
+%            non-monotones et le nombre de paires d'exemples dans une paire de
+%            feuilles $i$:
+%
+%            $$r_i = \frac{m_i}{n_{i1} \times n_{i2}}$$
+%
+%        avec $m_i$ le nombre de paires d'exemples non-monotones, $n_{i1}$ le
+%            nombre d'exemples dans la feuille gauche, et $n_{i2}$ le nombre
+%            d'exemples dans la feuille droite. Plus ce ratio est faible, plus
+%            l'arbre considéré est monotone.\\ 
+%
+%        \end{itemize}
+%    \item leur structure :
+%    \begin{itemize}
+%        \item La profondeur,
+%        \item Le nombre de feuilles,
+%        \item Le nombre de paires de feuilles, i.e., le nombre de feuilles ayant
+%            le même père, 
+%        \item Le nombre moyen d'exemples dans une paire de feuilles.
+%    \end{itemize}
+%    
+%\end{itemize}
+%
+%On étudie également l'impact du bruit non-monotone, puis du nombre de classes, sur
+%les performances des classifieurs. \\
+%
+%Pour $k=2,3,5$, on génère une base monotone-consistente de 1000 exemples à 2
+%attributs et $k$ classes. On fait varier le taux de bruit, i.e., le pourcentage
+%d'exemples de chaque classe dont le label doit être modifié, de 0 à 50\% avec un
+%pas de 2.5\%. Pour chaque taux de bruit, on évalue les performances et étudie la
+%structure des classifieurs à l'aide des indices précédents et d'une validation
+%croisée en 10 échantillons.
+%
+%\begin{figure}[H]
+%    \centering
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/cci_2.png}
+%        \caption{Pourcentage d'accuracy en fonction du pourcentage de bruit}
+%    \label{subresults:acc2}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/ratio_2.png}
+%        \caption{Ratio de paires de feuilles non-monotones en fonction du pourcentage de bruit}
+%    \label{subresults:ratio2}
+%    \end{subfigure}
+%    
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/depth_2.png}
+%        \caption{Profondeur en fonction du pourcentage de bruit}
+%    \label{subresults:depth2}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/leaves_2.png}
+%        \caption{Nombre de feuilles en fonction du pourcentage de bruit}
+%    \label{subresults:leaves2}
+%    \end{subfigure}
+%
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/nbpairs_2.png}
+%        \caption{Nombre de paires de feuilles en fonction du pourcentage de bruit}
+%    \label{subresults:pairs2}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/nbexamples_2.png}
+%        \caption{Nombre d'exemples dans une paire de feuilles en fonction du pourcentage de bruit}
+%    \label{subresults:ex2}
+%    \end{subfigure}
+%
+%    \caption{Résultats lorsque $k=2$}
+%    \label{results:artificial2}
+%\end{figure}
+%
+%Pour $k=2$, pour tout taux de bruit non-monotone, $H^*_S$ et $H_S$ produisent
+%des arbres similaires en termes de nombre de feuilles
+%(\figref{subresults:leaves2}), de paires de feuilles
+%(\figref{subresults:pairs2}), et d'exemples contenus dans une paire de feuilles
+%(\figref{subresults:ex2}). Cependant, d'après la \figref{subresults:depth2}, les
+%arbres générés par $H^*_S$ semblent plus profonds que ceux produits par $H_S$.
+%De plus, plus la base est bruitée, plus la profondeur, le nombre de feuilles et
+%de paires de feuilles augmentent, tandis que le nombre moyen d'exemples dans une
+%paire de feuilles diminue. 
+%
+%Concernant les performances, la \figref{subresults:acc2} montre que $H^*_S$ et
+%$H_S$ génèrent les mêmes taux d'accuracy lorsque le bruit non-monotone dans la
+%base est compris entre 0\% et 10\%. À partir de 10\% de bruit, l'écart entre les
+%taux générés par les deux mesures se creuse mais cette différence ne semble pas
+%significative : $H^*_S$ produit des classifieurs au moins aussi performants en
+%termes d'accuracy que $H_S$. De même, d'après la \figref{subresults:ratio2}, on ne
+%remarque pas de différence significative entre les deux mesures en termes de
+%ratio de paires non-monotones : elles génèrent des arbres de même degré de
+%monotonie. Enfin, plus le taux de bruit augmente, plus l'accuracy diminue et le
+%ratio augmente : les arbres perdent en performance de prédiction et deviennent
+%moins monotones lorsque la base se bruite.
+%
+%\begin{figure}[H]
+%    \centering
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/cci_3.png}
+%        \caption{Pourcentage d'accuracy en fonction du pourcentage de bruit}
+%    \label{subresults:acc3}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/ratio_3.png}
+%        \caption{Ratio de paires de feuilles non-monotones en fonction du pourcentage de bruit}
+%    \label{subresults:ratio3}
+%    \end{subfigure}
+%    
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/depth_3.png}
+%        \caption{Profondeur en fonction du pourcentage de bruit}
+%    \label{subresults:depth3}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/leaves_3.png}
+%        \caption{Nombre de feuilles en fonction du pourcentage de bruit}
+%    \label{subresults:leaves3}
+%    \end{subfigure}
+%
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/nbpairs_3.png}
+%        \caption{Nombre de paires de feuilles en fonction du pourcentage de bruit}
+%    \label{subresults:pairs3}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/nbexamples_3.png}
+%        \caption{Nombre d'exemples dans une paire de feuilles en fonction du pourcentage de bruit}
+%    \label{subresults:ex3}
+%    \end{subfigure}
+%
+%    \caption{Résultats lorsque $k=3$}
+%    \label{results:artificial3}
+%\end{figure}
+%
+%
+%Lorsque $k=3$, on peut voir sur les figures \ref{subresults:depth3},
+%\ref{subresults:leaves3}, \ref{subresults:pairs3}, \ref{subresults:ex3} que
+%$H^*_S$ produit respectivement des arbres plus profonds et contenant plus de
+%feuilles, de paires de feuilles et d'exemples par paire de feuilles que $H_S$.
+%Ces mesures évoluent de la même façon, en fonction du taux de bruit, que
+%précédemment.
+%
+%Par rapport au cas où $k=2$, on observe sur la~\figref{subresults:acc3} une plus
+%grande différence entre les deux mesures en ce qui concerne l'accuracy : $H^*_S$
+%semble être légèrement meilleur que $H_S$ mais cet écart n'est pas significatif.
+%De plus, la~\figref{subresults:ratio3} montre que les ratio de paires
+%non-monotones produits par ces deux mesures sont similaires, pour tout taux de
+%bruit. Ces deux indicateurs évoluent de la même manière, en fonction du taux de
+%bruit, que pour $k=2$.
+%
+%\begin{figure}[H]
+%    \centering
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/cci_5.png}
+%        \caption{Pourcentage d'accuracy en fonction du pourcentage de bruit}
+%    \label{subresults:acc5}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/ratio_5.png}
+%        \caption{Ratio de paires de feuilles non-monotones en fonction du pourcentage de bruit}
+%    \label{subresults:ratio5}
+%    \end{subfigure}
+%    
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/depth_5.png}
+%        \caption{Profondeur en fonction du pourcentage de bruit}
+%    \label{subresults:depth5}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/leaves_5.png}
+%        \caption{Nombre de feuilles en fonction du pourcentage de bruit}
+%    \label{subresults:leaves5}
+%    \end{subfigure}
+%
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/nbpairs_5.png}
+%        \caption{Nombre de paires de feuilles en fonction du pourcentage de bruit}
+%    \label{subresults:pairs5}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%        \centering
+%        \includegraphics[width=\textwidth]{images/nbexamples_5.png}
+%        \caption{Nombre d'exemples dans une paire de feuilles en fonction du pourcentage de bruit}
+%    \label{subresults:ex5}
+%    \end{subfigure}
+%
+%    \caption{Résultats lorsque $k=5$}
+%    \label{results:artificial5}
+%\end{figure}
+%
+%Pour $k=5$, les figures \ref{subresults:depth5}, \ref{subresults:leaves5},
+%\ref{subresults:pairs5}, et \ref{subresults:ex5} montrent que la structure des
+%arbres générés par $H^*_S$ n'est pas significativement différente de celle des
+%arbres produits par $H_S$. De plus, pour chaque indicateur, l'écart entre ces
+%deux mesures a diminué entre $k=3$ et $k=5$.
+%
+%De même, la \figref{subresults:acc5} montre que la différence entre les deux
+%mesures en termes d'accuracy se resserre de $k=3$ à $k=5$. En ce qui concerne la
+%monotonie, on observe sur la \figref{subresults:ratio5} que, entre 0\% et 10\%
+%de taux de bruit non-monotone, le ratio de paires de feuilles non-monotones
+%produit par $H^*_S$ est nettement supérieur à celui généré par $H_S$. À partir
+%de 10\% de bruit, l'écart entre les ratio produits n'est plus significatif. \\
+%
+%Les tests menés sur ces données artificielles montrent que, pour chacun des cas,
+%l'augmentation du taux de bruit non-monotone dans la base réduit l'accuracy et
+%la monotonie des arbres générés par $H^*_S$ et $H_S$. Ces derniers deviennent
+%plus profonds, plus feuillus et les paires de feuilles contiennent de moins en
+%moins d'exemples.
+%
+%On remarque que l'augmentation du nombre de classes ne permet pas d'extraire une
+%évolution particulière des indicateurs utilisés.
+%
+%Cependant, ces tests montrent que $H^*_S$ et $H_S$ ne sont pas significativement
+%différents en ce qui concerne l'accuracy : les arbres monotones générés par
+%$H^*_S$ sont robustes au bruit non-monotone. L'ajout d'une contrainte de
+%monotonie dans la construction du modèle ne diminue donc pas ses performances de
+%classification. Pour $k=2,5$, la structure de l'arbre ne semble pas varier pas
+%en fonction de la mesure de discrimination. En revanche, pour $k=3$, on observe
+%que $H^*_S$ permet d'obtenir des arbres plus profonds, feuillus, contenant plus
+%de paires de feuilles, et moins d'exemples par paire de feuilles, que $H_S$.
+%Quant à la monotonie, les résultats obtenus montrent que la mesure de ratio
+%utilisée ne permet pas d'illustrer, sur des données artificielles, l'apport
+%d'une mesure de discrimination d'ordre en classification monotone.
+%
+%
+%\subsubsection{Expérimentation sur des bases réelles}
+%
+%Dans cette section, nos arbres sont testés sur différentes bases réelles de
+%classification et une base de régression récupérées sur UCI \cite{uci}. Pour
+%chaque base, une étape de pré-traitement est effectuée : les attributs ordonnés
+%mais catégoriels sont numérisés, et les attributs ne présentant pas d'ordre
+%ainsi que les exemples incomplets sont supprimés.
+%
+%Les arbres sont évalués sur leur accuracy, leur profondeur, leur nombre de
+%feuilles, leur ratio de paires de feuilles non-monotones, ainsi que leur nombre
+%de paires de feuilles.
+%
+%On cherche à déterminer si, pour chaque mesure d'évaluation, les mesures de
+%discrimination testées produisent des résultats significativement différents. \\
+%
+%\begin{table}
+%\resizebox{\textwidth}{!}{
+%\begin{tabular}{|*{4}{c|}}
+%    \hline
+%        Dataset & Nombre d'exemples & Nombre d'attributs & Nombre de classes \\
+%        \hline
+%        Breast Cancer & 286 & 8 & 2 \\
+%        Cars Evaluation & 1728 & 6 & 4 \\
+%        CPU & 209 & 9 & 8 \\
+%    \hline
+%\end{tabular}}
+%\caption{Description des bases de classification}
+%\label{tab:descr-classification}
+%\end{table}
+%
+%\begin{table}
+%\resizebox{\textwidth}{!}{
+%\begin{tabular}{|*{9}{c|}}
+%    \hline
+%       Dataset & & $H^{*}_S$  & $H_S$  & $H^{*}_G$  & $H_G$ & $H^{*}_P$ & $H^{*}_M$  & $H^{*}_Q$ \\
+%    \hline
+%
+%    Breast Cancer & accuracy  & 59.17 \% $\pm$ 0.13 \% & 63.77 \% $\pm$ 0.11 \% & 56.31 \% $\pm$ 0.14 \% & 62.03 \% $\pm$ 0.08 \% & 61.40 \% $\pm$ 0.13 \% & 59.80 \% $\pm$ 0.11 \% & 54.80 \% $\pm$ 0.13 \% \\
+%
+%    & profondeur & 20.00 $\pm$ 1.48& 16.60 $\pm$ 1.74& 20.40 $\pm$ 1.36& 15.10 $\pm$ 1.45& 19.70 $\pm$ 2.24& 20.80 $\pm$ 1.60& 20.10 $\pm$ 1.58 \\
+%
+%    & feuilles & 129.20 $\pm$ 4.71& 81.60 $\pm$ 5.99& 129.80 $\pm$ 4.64& 80.10 $\pm$ 4.25& 114.90 $\pm$ 5.34& 127.10 $\pm$ 5.45& 134.90 $\pm$ 5.66 \\
+%
+%    & ratio & 84.51 \% $\pm$ 2.87 \%& 80.15 \% $\pm$ 4.76 \%& 84.49 \% $\pm$ 3.07 \%& 78.44 \% $\pm$ 3.88 \%& 86.80 \% $\pm$ 2.86 \%& 83.67 \% $\pm$ 1.80 \%& 81.68 \% $\pm$ 2.81 \% \\
+%
+%    & paires de feuilles & 31.90 $\pm$ 2.91& 18.90 $\pm$ 1.81& 31.60 $\pm$ 3.10& 20.60 $\pm$ 1.69& 28.30 $\pm$ 2.00& 32.40 $\pm$ 1.69& 36.30 $\pm$ 2.61 \\
+%
+%    & & & & & & & & \\
+%
+%    Cars Evaluation & accuracy  & 81.94 \% $\pm$ 0.04 \% & 81.85 \% $\pm$ 0.06 \% & 82.00 \% $\pm$ 0.04 \% & 78.72 \% $\pm$ 0.09 \% & 87.08 \% $\pm$ 0.04 \% & 88.59 \% $\pm$ 0.07 \% & 78.53 \% $\pm$ 0.03 \% \\
+%
+%    & profondeur  & 10.50 $\pm$ 0.50& 10.75 $\pm$ 0.43& 10.50 $\pm$ 0.50& 10.25 $\pm$ 0.43& 10.00 $\pm$ 0.00& 11.00 $\pm$ 0.00& 11.00 $\pm$ 0.00 \\
+%    & feuilles  & 66.50 $\pm$ 13.16& 37.25 $\pm$ 1.30& 66.50 $\pm$ 13.16& 38.00 $\pm$ 1.58& 52.00 $\pm$ 3.94& 54.00 $\pm$ 3.74& 121.25 $\pm$ 14.04 \\
+%    & ratio & 82.17 \% $\pm$ 5.00 \%& 83.82 \% $\pm$ 1.39 \%& 82.76 \% $\pm$ 5.56 \%& 84.68 \% $\pm$ 1.84 \%& 79.25 \% $\pm$ 2.93 \%& 77.33 \% $\pm$ 2.90 \%& 52.19 \% $\pm$ 4.34 \% \\
+%    & paires de feuilles & 27.75 $\pm$ 7.36& 11.75 $\pm$ 1.09& 27.75 $\pm$ 7.36& 12.00 $\pm$ 1.41& 18.25 $\pm$ 1.92& 18.00 $\pm$ 2.12& 46.75 $\pm$ 8.79 \\
+%
+%    
+%    & & & & & & & & \\
+%    
+%    CPU & accuracy  & 68.40 \% $\pm$ 0.04 \% & 66.02 \% $\pm$ 0.02 \% & 66.48 \% $\pm$ 0.05 \% & 66.97 \% $\pm$ 0.04 \% & 66.51 \% $\pm$ 0.00 \% & 60.73 \% $\pm$ 0.07 \% & 67.93 \% $\pm$ 0.02 \% \\
+%
+%& profondeur  & 10.50 $\pm$ 0.50& 9.00 $\pm$ 0.00& 10.00 $\pm$ 1.00& 8.50 $\pm$ 0.50& 11.00 $\pm$ 0.00& 14.50 $\pm$ 0.50& 11.00 $\pm$ 1.00 \\
+%
+%    & feuilles  & 35.00 $\pm$ 2.00& 27.50 $\pm$ 3.50& 36.50 $\pm$ 2.50& 28.50 $\pm$ 4.50& 36.50 $\pm$ 0.50& 41.50 $\pm$ 1.50& 40.50 $\pm$ 3.50 \\
+%
+%    & ratio  & 77.99 \% $\pm$ 0.11 \%& 86.00 \% $\pm$ 2.83 \%& 80.86 \% $\pm$ 1.05 \%& 81.80 \% $\pm$ 0.41 \%& 73.23 \% $\pm$ 4.66 \%& 70.73 \% $\pm$ 2.35 \%& 50.64 \% $\pm$ 16.03 \% \\
+%
+%    & paires de feuilles  & 9.50 $\pm$ 0.50& 7.50 $\pm$ 1.50& 9.50 $\pm$ 0.50& 7.50 $\pm$ 1.50& 9.50 $\pm$ 0.50& 10.50 $\pm$ 0.50& 12.50 $\pm$ 1.50 \\
+%
+%\hline
+%\end{tabular}}
+%\caption{Résultats sur les tâches de classification}
+%\label{tab:resultats-classification}
+%\end{table}
+%
+%\begin{figure}[H]
+%	\center 
+%	\includegraphics[width=0.6\textwidth]{images/breast-cancer.png}
+%    \caption{Corrélations entre les attributs de la base \emph{Breast Cancer}
+%    et la classe}
+%    \label{img:breast-cancer}
+%\end{figure}
+%
+%\begin{figure}[H]
+%	\center 
+%	\includegraphics[width=0.6\textwidth]{images/cpu.png}
+%    \caption{Corrélations entre les attributs de la base \emph{CPU}
+%    et la classe}
+%    \label{img:cpu}
+%\end{figure}
+%
+%\begin{figure}[H]
+%	\center 
+%	\includegraphics[width=0.6\textwidth]{images/cars.png}
+%    \caption{Corrélations entre les attributs de la base \emph{Cars Evaluation}
+%    et la classe}
+%    \label{img:cars}
+%\end{figure}
+%
+%Les bases de classification sont décrites dans le
+%\tabref*{tab:descr-classification}. Le \tabref*{tab:resultats-classification}
+%contient les résultats des tests menés sur ces bases.
+%
+%De manière générale, on peut observer que les arbres construits à partir des
+%mesures de discrimination d'ordre sont plus profonds, contiennent plus de
+%feuilles et de paires de feuilles que ceux générés par les mesures d'entropie
+%classiques. 
+%
+%La base \emph{Breast Cancer} comporte 9 attributs dont le nombre de valeurs
+%différentes varie de 2 à 11. Sur cette base, les mesures d'entropie classique
+%produisent de meilleurs résultats en termes de taux de bonne classification et
+%de monotonie que les mesures de discrimination d'ordre. La prise en compte de la
+%monotonie des données dans le critère de partitionnement n'offre donc pas
+%d'avantage. Néanmoins, cette base ne contient que 2 valeurs pour la classe, et
+%les attributs comportent peu de valeurs différentes : entre 2 et 11. Il n'y a
+%donc pas de véritable relation graduelle entre les attributs et la classe. La
+%\figref*{img:breast-cancer} confirme l'absence de corrélation entre les valeurs
+%d'attributs et de classe : il n'existe pas de contrainte de monotonie dans cette
+%base.
+%
+%En revanche, $H^*_S$, $H^*_G$, et $H^*_Q$ produisent de meilleurs taux de bonne
+%classification que les mesures d'entropie classiques sur la base \emph{CPU}.
+%De plus, sur les données de \emph{Cars Evaluation}, $H^*_S$, $H^*_G$, $H^*_P$
+%et $H^*_M$ génèrent de meilleures prédictions que les mesures classiques. Sur
+%ces deux bases, tous les ratio produits par les mesures de discrimination
+%d'ordre sont plus faibles que ceux produits par les mesures classiques : cela
+%indique que les arbres générés par une mesure qui prend en compte la relation
+%graduelle entre les attributs et la classe garantissent une plus forte monotonie
+%que les autres.
+%
+%Dans le but de comprendre pourquoi les mesures de discrimination d'ordre
+%présentent de meilleures performances, on examine les corrélations entre chaque
+%paire d'attributs, classe incluse (\emph{PRP}, avant-dernière colonne en partant de la
+%gauche, avant-dernière ligne en partant du haut). La \figref*{img:cpu} montre que, dans la base
+%\emph{CPU}, les valeurs des attributs sont très étalées et un certain nombre
+%d'attributs apparaissent corrélés (positivement comme \emph{ERP} et \emph{PRP}, ou
+%négativement comme \emph{PRP} et \emph{MYCT}).
+%
+%Cependant, on peut voir sur la \figref*{img:cars} que les attributs de la base
+%\emph{Cars Evaluation} comprennent peu de valeurs différentes et sont peu
+%corrélées à la classe (\emph{class}, dernière colonne en partant de la gauche,
+%dernière ligne en partant du haut) : on manque encore d'une explication générale. \\
+%
+%
+%\begin{table}
+%\resizebox{\textwidth}{!}{
+%\begin{tabular}{|*{6}{c|}}
+%    \hline
+%         Nombre de classes & & $H^{*}_S$  & $H_S$  & $H^{*}_G$  & $H_G$ \\
+%    \hline
+%
+%     2 classes & accuracy  & 68.93\% $\pm$ 0.11 \% &69.68 \% $\pm$ 0.11 \% & 69.54 \% $\pm$ 0.12 \% & 70.33\% $\pm$ 0.12 \% \\
+%
+%     & profondeur  & 17.0 $\pm$ 1.22 & 13.5 $\pm$ 0.87 & 17.5 $\pm$ 1.50 & 12.25 $\pm$ 0.43 \\
+%
+%     & feuilles & 99.75 $\pm$ 5.07 & 78.25 $\pm$ 5.54 & 102.5 $\pm$ 7.79 & 79.25 $\pm$ 5.67 \\
+%
+%     & ratio & 87.82\% $\pm$ 0.01 \% & 87.86\% $\pm$ 0.01
+%     \%& 88.36\% $\pm$ 0.01 \% & 87.42\% $\pm$ 0.02 \%\\
+%
+%     & paires de feuilles  & 28.5 $\pm$ 2.29 & 24.5 $\pm$ 2.87 & 28.5 $\pm$ 2.60 & 29.0 $\pm$ 1.22\\
+%    
+%    & & & & & \\
+%
+%    3 classes & accuracy  & 39.25\%  $\pm$ 0.10 \%& 33.00\% $\pm$ 0.12\% & 35.14 \% $\pm$ 0.07\% & 32.33 \% $\pm$ 0.11\%  \\
+%
+%     & profondeur  &  20.5 $\pm$ 1.66&  14.75$\pm$1.09& 18.25$\pm$1.48&  15.5 $\pm$2.69 \\
+%
+%     & feuilles  & 158.75 $\pm$ 5.12 & 140.5 $\pm$ 1.66 & 164.25 $\pm$
+%     3.83 & 143.75 $\pm$ 5.72 \\
+%
+%     & ratio  & 74.82 \% $\pm$ 0.03\%& 80.74 \% $\pm$ 0.04\%& 75.60 \% $\pm$ 0.04\%& 79.11 \% $\pm$ 0.04\% \\
+%
+%     & paires de feuilles  & 44.5 $\pm$ 2.60& 48.25 $\pm$ 1.92& 45.75 $\pm$ 3.03& 47.25 $\pm$ 3.63 \\
+%
+%    & & & & & \\
+%    
+%    7 classes & accuracy  & 31.18 \%$\pm$ 0.08 \%  & 30.37 \%$\pm$ 0.06\%  & 29.37 \%$\pm$ 0.08 \%\% & 29.24\% \%$\pm$ 0.05 \% \\
+%
+%     & profondeur & 19.0 $\pm$ 1.87 & 15.75 $\pm$ 1.29& 19.5 $\pm$ 1.12& 14.25 $\pm$ 1.30 \\
+%
+%     & feuilles  & 171.75 $\pm$ 3.11 & 151.5 $\pm$ 3.77 & 172.5 $\pm$ 3.64 & 157.5 $\pm$ 4.09 \\
+%
+%     & ratio  & 53.82 \%$\pm$ 0.05 \%& 56.23 \%$\pm$ 0.02 \%& 51.74\% \%$\pm$ 0.01 \%& 51.89 \% $\pm$ 0.05 \% \\
+%
+%     & paires de feuilles & 47.0 $\pm$ 2.23 & 48.25 $\pm$ 1.92 & 47.0 $\pm$ 1.87& 51.25 $\pm$ 3.34\\
+%
+%    & & & & & \\
+%
+%     9 classes & accuracy  & 25.60 \%$\pm$ 0.05 \%  & 23.93 \%$\pm$ 0.08\%  & 24.53 \%$\pm$ 0.06 \% & 22.07\% \%$\pm$ 0.05 \% \\
+%
+%     & profondeur  & 19.5 $\pm$ 1.5 & 14.75 $\pm$ 0.43 & 20.0 $\pm$ 1.22 & 14.0
+%     $\pm$ 1.00  \\
+%
+%     & feuilles  & 171.75 $\pm$ 5.89 & 158.5 $\pm$ 0.87 & 176.0 $\pm$
+%     3.94 & 160.0 $\pm$ 2.55 \\
+%
+%     & ratio  & 53.07 \%$\pm$ 0.04 \%& 55.45 \%$\pm$ 0.03
+%     \%& 51.86\% \%$\pm$ 0.02 \%& 53.41\% \%$\pm$ 0.01 \% \\
+%
+%     & paires de feuilles  & 46.0 $\pm$ 4.53 & 52.25 $\pm$ 3.69& 48.0
+%     $\pm$ 1.87 & 54.0 $\pm$ 2.12 \\
+%    \hline
+%
+%\end{tabular}}
+%\caption{Résultats sur la base de régression}
+%\label{tab:resultats-regression}
+%\end{table}
+%
+%\begin{figure}[H]
+%	\center 
+%	\includegraphics[width=0.6\textwidth]{images/airfoil.png}
+%    \caption{Corrélations entre les attributs de la base \emph{Airfoil
+%    Self-Noise}
+%    et la classe}
+%    \label{img:airfoil}
+%\end{figure}
+%
+%D'autre part, la base de régression \emph{Airfoil Self-Noise} est utilisée afin
+%d'étudier l'impact du nombre de classes sur les performances du classifieur.
+%Cette base est constituée de 1503 éléments à 5 attributs : \emph{frequency} (21
+%valeurs différentes), \emph{angle of attack} (27 valeurs différentes),
+%\emph{chord length} (6 valeurs différentes), \emph{velocity} (4 valeurs
+%différentes), et \emph{thickness} (105 valeurs différentes). La classe à
+%prédire, \emph{scaled sound pressure level}, comporte 1456 valeurs différentes.
+%En fonction des quantiles, on discrétise les valeurs de classe en 2, 3, 7, et 9
+%classes afin d'obtenir des tâches de classification. On
+%étudie les performances du classifieur en fonction de la mesure de
+%discrimination utilisée pour chaque discrétisation de classe, puis l'impact du
+%nombre de classes sur les résultats.
+%
+%Comme précédemment, les arbres générés par des mesures de discrimination d'ordre
+%sont plus profonds et contiennent plus de feuilles que les autres, pour toute
+%discrétisation. De plus, ils permettent d'obtenir de meilleurs résultats en
+%termes de taux de bonne classification et de monotonie. En revanche, lorsque la
+%base contient plus de 2 classes, les arbres construits par des mesures
+%d'entropie classiques comprennent plus de paires de feuilles que ceux tenant
+%compte de la monotonie. 
+%
+%On remarque également, pour chaque mesure étudiée, une nette diminution du ratio
+%de paires non-monotones lorsque l'on augmente le nombre de classes. Plus il est
+%élevé, plus la relation graduelle existant entre les attributs et la classe est
+%renforcée. Couplée par des mesures de discrimination prenant en compte la
+%monotonie, on obtient des classifieurs plus performants que ceux générés par des
+%mesures d'entropie classiques.
+%
+%Néanmoins, la \figref*{img:airfoil} montre le peu de corrélation entre les
+%attributs et la classe (représentée par la dernière ligne en partant du haut, et
+%la dernière colonne en partant de la gauche). Il est encore difficile
+%d'expliquer cette différence de performance entre les classifieurs monotones et
+%non-monotones. \\
+%
+%Les expériences menées sur les bases précédentes mettent en valeur les avantages
+%des arbres générés par des mesures tenant compte de la contrainte de monotonie
+%par rapport aux arbres construits avec des mesures classiques. Cependant, on
+%manque d'une explication générale à ce phénomène : l'absence de relation
+%monotone entre les attributs et la classe n'implique pas de moins bonnes
+%performances de la part des arbres monotones par rapport aux arbres classiques.
+%De plus, comme pour les expériences menées sur des données artificielles, il est
+%toujours difficile d'évaluer le taux de monotonie d'un arbre.
+%
+%\section{Conclusion du stage et perspectives} 
+%
+%Mon stage a porté sur un framework particulier de classification
+%monotone~\cite{marsala-rank}. Après avoir fait l'état de l'art sur les approches
+%de classification monotone proposées dans la littérature, je me suis placée dans
+%le contexte des arbres de décision monotones paramétrés par une mesure de
+%sélection d'attribut.
+%
+%J'ai effectué une étude théorique des mesures de discrimination d'ordre afin de
+%vérifier certaines propriétés clés et d'en extraire d'autres (notamment le sens
+%de variation). 
+%
+%J'ai également implémenté
+%une bibliothèque pour les arbres monotones comprenant le modèle de construction
+%hiérarchique des mesures~\cite{marsala-rank}, ainsi que l'algorithme de
+%construction d'arbres monotones~\cite{marsala-rank} légèrement modifié. 
+%
+%Des expérimentations sur des bases artificielles et réelles ont été menées afin de
+%mettre en avant les avantages des arbres monotones et comparer les différentes
+%mesures de discrimination entre elles. Les résultats observés sur les bases
+%réelles dans lesquelles il existe une forte gradualité entre les attributs et la
+%classe montrent que les arbres produits par des mesures de discrimination
+%d'ordre sont plus performants et plus monotones que ceux générés par des mesures
+%d'entropie classiques. Cependant, les tests lancés sur des bases générées
+%artificiellement ne permettent pas de souligner l'apport des mesures de
+%discrimination d'ordre en termes de monotonie des
+%arbres. \\
+%
+%Une perspective possible serait de travailler sur ce problème : il peut venir de la façon de partitionner les données (discrétisation en deux sous-ensembles
+%alors qu'il peut y avoir plus de deux classes) ou de la mesure d'évaluation de la
+%monotonie utilisée. De plus, notre algorithme considère que tous les attributs
+%sont monotones par rapport à la classe, ce qui n'est cependant pas le cas dans
+%la plupart des cas d'applications réelles. \\
+%
+%Sur un plan plus personnel, ce stage m'a initiée et donné goût à la recherche en
+%laboratoire. Je tiens à remercier mon maître de stage, Christophe Marsala, ainsi
+%qu'Arthur Guillon, doctorant à LFI, pour m'avoir aidée et accompagnée durant ce
+%stage.
+%
+%%%%% ANNEXES %%%
+%\appendix
+%\newpage
+%
+%\section{Courbes des *-dsr}
+%\label{appendix:dsr}
+%
+%\begin{figure}[H]
+%	\centering
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering
+%        \includegraphics[width=\textwidth]{images/mindsr_0.png}
+%        \caption{Valeur de mindsr en fonction de l'indice de l'objet pour une base
+%        non-bruitée}
+%        \label{img:mindsr0}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering
+%	    \includegraphics[width=\textwidth]{images/mindsr_25.png}
+%        \caption{Valeur de mindsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 25\%}
+%        \label{img:mindsr25}
+%    \end{subfigure}
+%
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering 
+%	    \includegraphics[width=\textwidth]{images/mindsr_50.png}
+%        \caption{Valeur de mindsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 50\%}
+%        \label{img:mindsr50}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%    	\centering
+%    	\includegraphics[width=\textwidth]{images/mindsr_75.png}
+%        \caption{Valeur de mindsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 75\%}
+%        \label{img:mindsr75}
+%    \end{subfigure}
+%\caption{Courbes de $mindsr$ en fonction du taux de bruit non-monotone}
+%\end{figure}
+%
+%\begin{figure}[H]
+%	\centering
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering
+%        \includegraphics[width=\textwidth]{images/maxdsr_0.png}
+%        \caption{Valeur de maxdsr en fonction de l'indice de l'objet pour une base
+%        non-bruitée}
+%        \label{img:maxdsr0}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering
+%	    \includegraphics[width=\textwidth]{images/maxdsr_25.png}
+%        \caption{Valeur de maxdsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 25\%}
+%        \label{img:maxdsr25}
+%    \end{subfigure}
+%
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering 
+%	    \includegraphics[width=\textwidth]{images/maxdsr_50.png}
+%        \caption{Valeur de maxdsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 50\%}
+%        \label{img:maxdsr50}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%    	\centering
+%    	\includegraphics[width=\textwidth]{images/maxdsr_75.png}
+%        \caption{Valeur de maxdsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 75\%}
+%        \label{img:maxdsr75}
+%    \end{subfigure}
+%\caption{Courbes de $maxdsr$ en fonction du taux de bruit non-monotone}
+%\end{figure}
+%
+%\begin{figure}[H]
+%	\centering
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering
+%        \includegraphics[width=\textwidth]{images/avgdsr_0.png}
+%        \caption{Valeur de avgdsr en fonction de l'indice de l'objet pour une base
+%        non-bruitée}
+%        \label{img:avgdsr0}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering
+%	    \includegraphics[width=\textwidth]{images/avgdsr_25.png}
+%        \caption{Valeur de avgdsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 25\%}
+%        \label{img:avgdsr25}
+%    \end{subfigure}
+%
+%    \begin{subfigure}[c]{0.46\textwidth}
+%	    \centering 
+%	    \includegraphics[width=\textwidth]{images/avgdsr_50.png}
+%        \caption{Valeur de avgdsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 50\%}
+%        \label{img:avgdsr50}
+%    \end{subfigure}
+%    \begin{subfigure}[c]{0.46\textwidth}
+%    	\centering
+%    	\includegraphics[width=\textwidth]{images/avgdsr_75.png}
+%        \caption{Valeur de avgdsr en fonction de l'indice de l'objet pour une base
+%        bruitée à 75\%}
+%        \label{img:avgdsr75}
+%    \end{subfigure}
+%\caption{Courbes de $avgdsr$ en fonction du taux de bruit non-monotone}
+%\end{figure}
+%
+%\section{Algorithme de discrétisation}
+%\label{appendix:discretize}
+%
+%\begin{algorithm}[H]
+%\caption{Discrétisation}
+%\begin{algorithmic}
+%\Procedure{discretize}{$H^*, \Omega$}
+%\State \Comment{$H^*$ : mesure de discrimination construite de façon hiérarchique}
+%\State \Comment{$\Omega$ : base de données étiquetées}
+%\State \Comment{$a_j$: attribut à discrétiser}
+%
+%\State $n\gets$ $| \Omega |$ 
+%\State $T \gets $ matrice dont la première colonne contient les valeurs de $a_j(\omega_i)$ triées par ordre croissant, la deuxième, les valeurs de $\lambda(\omega_i)$ triées selon $a_j(\omega_i)$, et la troisième, les $i=1,...,n$ triés selon $a_j(\omega_i)$, pour tout $\omega_i \in \Omega$.
+%\State $U\gets \{a_j(w_i) : \forall \omega_i \in \Omega\}$ \Comment{valeurs uniques de $a_j(\omega_i)$ pour tout $\omega_i \in \Omega$} \\
+%
+%\State $a^{b}_j(\omega_i) \gets 1, \forall w_i \in \Omega$ \Comment{valeur de l'attribut $a_j$ binarisée i.e $a^{b}_j(\omega_i) = 0$ si $a_j(\omega_i) \leq x_{j_s}$, 1 sinon, pour $x_{j_s}$ fixé}
+%\State $[\omega_i]^{\leq}_{a^{b}_j} \gets \Omega, \forall w_i \in \Omega$ 
+%\State $[\omega_i]a_i]^{\leq}_{\lambda} \gets \{\omega_h \in \Omega : \lambda(\omega_i) \leq \lambda(\omega_h)\}$ \\
+%
+%\State $S \gets \varnothing $ \Comment{seuils de coupure considérés}
+%\State $E \gets \varnothing $ \Comment{valeurs de $H^*$ obtenues pour chaque seuil de coupure $s \in S$}
+%\State V $\gets \varnothing $ \Comment{ensemble des $\omega \in \Omega$ déjà visités} \\
+%
+%\For{$v \in U$} \Comment{on considère chaque valeur unique de $\mathcal{A}$}
+%    \State $\Omega_{v} \gets \{\omega_i \in \Omega : a_j(\omega_i) = v\}$
+%    \State $C_{v} \gets \{c \in C : \exists \omega_h \in \Omega_{v}, \lambda(\omega_h) = c\}$
+%    \State $v' \gets$ valeur suivante dans U
+%    \State $\Omega_{v'} \gets \{\omega_i \in \Omega : a_j(\omega_i) = v'\}$
+%    \State $C_{v'} \gets \{c \in C : \exists \omega_h \in \Omega_{v'}, \lambda(\omega_h) = c\}$
+%    \State $V \gets V \cup \{\Omega_{v}\}$    
+%    \State $a^{b}_j(\omega_i) \gets 0$ pour tout $\omega_i \in \Omega_{v}$ 
+%    \State $x_{j_s}\gets \frac{v + v'}{2}$\\
+%    
+%    \If{$C_{v'} \neq C_{v}$}
+%    	\State $[\omega_i]_{a^{b}_j} \gets \Omega, \forall \omega_i \in V$
+%        \State $\bar{V} \gets \Omega \setminus V$ \Comment{ensemble des $\omega \in \Omega$ non visités}
+%        \State $[\omega_i]^{\leq}_{a^{b}_j} \gets \bar{V}, \forall \omega_i \in \bar{V}$
+%        \State $S \gets S \cup \{x_{j_s}\}$
+%        \State $E \gets E \cup \{H^*(\lambda | a^{b}_j)\}$
+%    \EndIf
+%\EndFor
+%
+%\State \textbf{return} $\min E, arg\,min_{s \in S} E $ \Comment{retourner la valeur d'entropie minimale et le seuil de coupure permettant de l'obtenir}
+%\EndProcedure
+%\end{algorithmic}
+%\end{algorithm}
+%
+%\section{Algorithme de construction de l'arbre}
+%\label{appendix:build-tree}
+%\begin{algorithm}[H]
+%\caption{Construction de l'arbre}
+%\label{alg:build-tree}
+%\begin{algorithmic}
+%\Procedure{build\_dt}{$\Omega_{\alpha}$, $H^*$, H, $\epsilon$, $\Delta$, $n_{min}$, $\lambda$, $\delta$}
+%\State \Comment{$\Omega_{\alpha}$ : base de données étiquetées}
+%\State \Comment{$H^*$ : mesure de discrimination utilisée pour le
+%    partitionnement}
+%\State \Comment{$H$ : mesure de discrimination utilisée pour déterminer l'arrêt }
+%\State \Comment{$\epsilon$ : limite inférieure pour H}
+%\State \Comment{$\Delta$ : longueur maximale d'un chemin de la racine à une feuille}
+%\State \Comment{$n_{min}$ : taille minimale pour $\Omega_{\alpha}$}
+%\State \Comment{$\lambda$ : fonction d'étiquetage}
+%\State \Comment{$\delta$ : longueur du chemin de la racine au noeud courant}
+%
+%\State $h \gets H(\Omega_{\alpha}, \lambda)$
+%
+%\If{$h < \epsilon$ \OR $| \Omega_{\alpha} | < n_{min}$ \OR $\forall \omega_i,
+%    \omega_h \in \Omega_{\alpha}, \lambda(\omega_i) = \lambda(\omega_h)$ \OR $\delta > \Delta$}
+%    \State $c_{\alpha} \gets c$ tel que $|\{\omega_i \in \Omega_{\alpha}:
+%        \lambda(\omega_i) = c\}| \geq |\{\omega_i \in \Omega_{\alpha}:
+%        \lambda(\omega_i) \neq c\}|$
+%    \State \textbf{return} LEAF($c_{\alpha}, \Omega$) \\
+%\EndIf
+%
+%\State $m\gets$ nombre d'attributs dans $\Omega$
+%\State $S\gets \varnothing $ \Comment{pour chaque $a_j \in \mathcal{A}$,
+%    contient $x_{j_{*}}= arg\,min \{H(\lambda | a^{x_{j_s}}_j), s=1,...,t_{j} - 1$\}}
+%\State $E\gets \varnothing $ \Comment{pour chaque $a_j \in \mathcal{A}$,
+%    contient $min \{H(\lambda | a^{x_{j_s}}_j), s=1,...,t_j - 1\}$}\\
+%
+%\For{$a_j$=0 to m-1}
+%    \If{$a_j(\omega_i) = a_j(\omega_h), \forall \omega_i, \omega_h \in
+%    \Omega_{\alpha}$} \State $S \gets S \cup \{\infty\}$
+%    	\State $E \gets E \cup \{\infty\}$
+%    \Else
+%        \State $x_{j_*}, h \gets$ DISCRETIZE($H^*, \Omega_{\alpha}, a_j$) 
+%        \State $S \gets S \cup \{x_{j_*}\}$
+%        \State $E \gets E \cup \{h\}$ \\
+%    \EndIf
+%\EndFor
+%
+%\State $x_* \gets arg\,min_{s \in S} E$ %seuils[argmin(entropies)]
+%\State $a^{x_*}_*\gets arg\,min_{a_j \in \mathcal{A}} E $ \\ %argmin(entropies)
+%
+%\State $\Omega_{\leq}, \Omega_{\geq}\gets$ DIVIDE($\Omega_{\alpha}, a^{x_*}_*,
+%    x_*$) 
+%
+%\If{$| \Omega_{\leq} | = 0$}
+%    \State \textbf{return} $\{c\}$ tel que $|\{\omega_i \in \Omega_{\geq}:
+%    \lambda(\omega_i) = c\}| \geq |\{\omega_i \in \Omega_{\geq}:
+%    \lambda(\omega_i) \neq c\}|$
+%\EndIf
+%
+%\If{$| \Omega_{\geq} | = 0$}
+%    \State \textbf{return} $\{c\}$ tel que $|\{\omega_i \in \Omega_{\leq}
+%    \lambda(\omega_i) = c\}| \geq |\{\omega_i \in \Omega_{\leq}:
+%    \lambda(\omega_i) \neq c\}|$
+%\EndIf
+%
+%\State $\mathcal{T}_{\leq}\gets$ BUILD\_DT($\Omega_{\leq}, H^*, H, \epsilon, \Delta,
+%    n_{min}, \lambda, \delta +1$) 
+%\State $\mathcal{T}_{\geq}\gets$
+%    BUILD\_DT($\mathcal{T}_{\geq}, H^*, H, \epsilon, \Delta, n_{min}, \lambda, \delta
+%    +1$)
+%\State $\mathcal{T} \gets$ TREE($\{a^{x_*}_*\}, \mathcal{T}_{\leq}, \mathcal{T}_{\geq}$)
+%\State \textbf{return} $\mathcal{T}$
+%
+%\EndProcedure
+%\end{algorithmic}
+%\end{algorithm}
+%
+%\section{Démonstration des propriétés de $f^*$}
+%\label{appendix:demo-f}
+%
+%\textbf{(F1)} Soit $\omega_i \in \Omega$. Montrons que $mindsr(\omega_i) \leq
+%f^*(\omega_i) \leq maxdsr(\omega_i)$.
+%
+%\begin{proof}
+%\begin{itemize}
+%
+%\item $f^* = dsr$ :  
+%    \begin{IEEEeqnarray*}{rCl}
+%        \min_{\omega_h \in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda} \cap
+%        [\omega_h]^{\leq}_{a_j}| &=&
+%        min(|[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j}|,
+%        \min_{\omega_h \in [\omega_i]_{a_j}, \omega_h \neq \omega_i}
+%        |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}|)
+%     \\
+%        &\leq& |[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j}| \\
+%    \end{IEEEeqnarray*}
+%    d'où
+%    \begin{IEEEeqnarray*}{rCl}
+%        \frac{\min_{\omega_h \in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda}
+%        \cap [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} &\leq&
+%        \frac{|[\omega_i]^{\leq}_{\lambda} \cap
+%        [\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} 
+%    \end{IEEEeqnarray*}
+%    soit
+%    \begin{IEEEeqnarray*}{rCl}
+%        mindsr(\omega_i) &\leq& dsr(\omega_i)
+%    \end{IEEEeqnarray*}
+%
+%De manière similaire,
+%
+%    \begin{IEEEeqnarray*}{rCl}
+%        \max_{\omega_h \in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda} \cap
+%        [\omega_h]^{\leq}_{a_j}| &=&
+%        max(|[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j}|,
+%        \max_{\omega_h \in [\omega_i]_{a_j}, \omega_h \neq \omega_i}
+%        |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}|)
+%     \\
+%        &\geq& |[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j}| \\
+%    \end{IEEEeqnarray*}
+%    d'où
+%    \begin{IEEEeqnarray*}{rCl}
+%        \frac{\max_{\omega_h \in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda}
+%        \cap [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} &\geq&
+%        \frac{|[\omega_i]^{\leq}_{\lambda} \cap
+%        [\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} 
+%    \end{IEEEeqnarray*}
+%    c'est-à-dire
+%    \begin{IEEEeqnarray*}{rCl}
+%        maxdsr(\omega_i) &\geq& dsr(\omega_i)
+%    \end{IEEEeqnarray*}
+%    et l'on obtient
+%        $$ mindsr(\omega_i) \leq f^*(\omega_i) \leq maxdsr(\omega_i) $$
+%
+%\item $f^* = mindsr$ : \\
+% 
+%    $$\min_{\omega_h \in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda} \cap
+%        [\omega_h]^{\leq}_{a_j}| \leq \max_{\omega_h \in [\omega_i]_{a_j}}
+%        |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}|$$ \\
+%    donc 
+%     $$\frac{\min_{\omega_h \in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda} \cap
+%        [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} \leq
+%        \frac{\max_{\omega_h \in [\omega_i]_{a_j}}
+%        |[\omega_h]^{\leq}_{\lambda} \cap
+%        [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|}$$ \\
+%    d'où
+%        $$mindsr(\omega_i) \leq maxdsr(\omega_i)$$ \\
+%    et l'on a bien \\
+%    $$mindsr(\omega_i) \leq f^*(\omega_i) \leq maxdsr(\omega_i)$$
+%
+%\item Le même raisonnement est appliqué pour $f^* = maxdsr$.
+%%    De la même façon,
+%%    \begin{IEEEeqnarray*}{rCl}
+%%        \max_{\omega_h \in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda} \cap
+%%        [\omega_h]^{\leq}_{a_j}| &\geq&
+%%        \min_{\omega_h \in [\omega_i]_{a_j}}
+%%        |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}|
+%%     \\
+%%    \end{IEEEeqnarray*}
+%%    donc
+%%    \begin{IEEEeqnarray*}{rCl}
+%%        mindsr(\omega_i) &\leq& maxdsr(\omega_i) \\
+%%    \end{IEEEeqnarray*}
+%%    et l'on a bien
+%%    $$ mindsr(\omega_i) \leq f^*(\omega_i) \leq maxdsr(\omega_i) $$
+%
+%\item $f^* = avgdsr$ :
+%
+%    Soit $\omega_h \in [\omega_i]_{a_j}$. 
+%    
+%    $$min_{\omega_l \in [\omega_i]_{a_j}} |[\omega_l]^{\leq}_{\lambda} \cap
+%    [\omega_l]^{\leq}_{a_j}| \leq |[\omega_h]^{\leq}_{\lambda} \cap
+%    [\omega_h]^{\leq}_{a_j}|$$
+%
+%    donc
+%
+%    $$\sum_{\omega_h \in [\omega_i]_{a_j}} min_{\omega_l \in [\omega_i]_{a_j}}
+%    |[\omega_l]^{\leq}_{\lambda} \cap [\omega_l]^{\leq}_{a_j}| =
+%    |[\omega_i]_{a_j}| \times min_{\omega_l \in [\omega_i]_{a_j}}
+%    |[\omega_l]^{\leq}_{\lambda} \cap [\omega_l]^{\leq}_{a_j}| \leq
+%    \sum_{\omega_h \in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda} \cap
+%    [\omega_h]^{\leq}_{a_j}|$$
+%
+%    On obtient
+%    
+%    $$min_{\omega_h \in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda} \cap
+%    [\omega_i]^{\leq}_{a_j}| \leq \frac{\sum_{\omega_h \in [\omega_i]_{a_j}}
+%    |[\omega_h]^{\leq}_{\lambda} \cap
+%    [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]_{a_j}|} $$  
+%
+%    et donc
+%
+%    $$\frac{min_{\omega_h \in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda}
+%    \cap [\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} \leq
+%    \frac{\sum_{\omega_h \in [\omega_i]_{a_j}}
+%    \frac{|[\omega_h]^{\leq}_{\lambda} \cap
+%    [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]_{a_j}|}}{|[\omega_i]^{\leq}_{a_j}|} $$  
+%
+%    soit
+%
+%    $$ mindsr(\omega_i) \leq avgdsr(\omega_i) $$
+%
+%De la même façon,
+%
+%$$ \sum_{\omega_h \in [\omega_i]^{\leq}_{a_j}}|[\omega_h]^{\leq}_{\lambda} \cap
+%[\omega_h]^{\leq}_{a_j}| \leq \sum_{\omega_h \in [\omega_i]_{a_j}} max_{\omega_h
+%\in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda} \cap
+%[\omega_h]^{\leq}_{a_j}|$$
+%
+%donc
+%
+%$$ \frac{\sum_{\omega_h \in [\omega_i]^{\leq}_{a_j}}|[\omega_h]^{\leq}_{\lambda}
+%\cap [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} \leq max_{\omega_h \in
+%[\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}|$$
+%
+%d'où
+%
+%$$ avgdsr(\omega_i) \leq maxdsr(\omega_i)$$
+%
+%\end{itemize}
+%\end{proof}
+%
+%\textbf{(F2)} Soit $\omega_i \in \Omega$. Montrons que, si $f^*(\omega_i) = 1$, 
+%alors $a_j(\omega_i) \leq a_j(\omega_h) \Rightarrow \lambda(\omega_i) \leq
+%\lambda(\omega_h)$, pour tout $\omega_h \in \Omega$.
+%
+%\begin{proof}
+%\begin{itemize}
+%    \item $f^* = dsr$ :
+%
+%Si $f^*(\omega_i) = 1 $, alors $|[\omega_i]^{\leq}_{\lambda} \cap
+%        [\omega_i]^{\leq}_{a_j}| = |[\omega_i]^{\leq}_{a_j}|$, c'est-à-dire
+%        $[\omega_i]^{\leq}_{a_j} \subseteq [\omega_i]^{\leq}_{\lambda}$. Pour
+%        tout $\omega_h \in [\omega_i]^{\leq}_{a_j}$, on a donc $\omega_h \in
+%        [\omega_i]^{\leq}_{\lambda}$. Ainsi, $a_j(\omega_i) \leq a_j(\omega_h)
+%        \Rightarrow \lambda(\omega_i) \leq \lambda(\omega_h)$. \\
+%    
+%    \item $f^* = mindsr$ : 
+%
+%        $min_{\omega_h \in [\omega_i]_{a_j}}|[\omega_h]^{\leq}_{\lambda} \cap
+%        [\omega_h]^{\leq}_{a_j}| = min(|[\omega_i]^{\leq}_{\lambda} \cap
+%        [\omega_i]^{\leq}_{a_j}|, min_{\omega_h \in [\omega_i]_{a_j}, \omega_h
+%        \neq \omega_i}|[\omega_h]^{\leq}_{\lambda} \cap
+%        [\omega_h]^{\leq}_{a_j}|) \leq |[\omega_i]^{\leq}_{\lambda} \cap
+%        [\omega_i]^{\leq}_{a_j}| \leq |[\omega_i]^{\leq}_{a_j}|$. 
+%        Comme $f^*(\omega_i) = 1$, $min_{\omega_h \in [\omega_i]_{a_j}}
+%        |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}| =
+%        |[\omega_i]^{\leq}_{a_j}|$. On a donc $|[\omega_i]^{\leq}_{\lambda}
+%        \cap [\omega_i]^{\leq}_{a_j}| = |[\omega_i]^{\leq}_{a_j}|$, soit
+%        $[\omega_i]^{\leq}_{a_j} \subseteq [\omega_i]^{\leq}_{\lambda}$. Ainsi,
+%        $a_j(\omega_i) \leq a_j(\omega_h) \Rightarrow \lambda(\omega_i) \leq
+%        \lambda(\omega_h)$.\\
+%
+%    \item $f^* = avgdsr$ : \textcolor{red}{À compléter} \\% À COMPLÉTER
+%\end{itemize}
+%\end{proof}
+%
+%\textbf{(F3)} Soient $\omega_i, \omega_h \in \Omega$. Si $[\omega_i]^{\leq}_{a_j} \cap
+%[\omega_i]^{\leq}_{a_j} \subseteq [\omega_h]^{\leq}_{\lambda} \cap
+%[\omega_h]^{\leq}_{a_j}$ et $[\omega_i]_{a_j} = [\omega_h]_{a_j}$, alors
+%$f^*(\omega_i) \leq f^*(\omega_h)$.
+%
+%\begin{proof}
+%\begin{itemize}
+%    \item $f^* = dsr$ :
+%
+%Si $[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j} \subseteq
+%        [\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}$, alors
+%        $|[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j}| \leq
+%        |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}|$. Comme
+%        $[\omega_i]_{a_j} = [\omega_h]_{a_j}$, on a $[\omega_i]^{\leq}_{a_j} =
+%        [\omega_h]^{\leq}_{a_j}$. D'où $\frac{|[\omega_i]^{\leq}_{\lambda} \cap
+%        [\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} \leq
+%        \frac{|[\omega_h]^{\leq}_{\lambda} \cap
+%        [\omega_h]^{\leq}_{a_j}|}{|[\omega_h]^{\leq}_{a_j}|}$, c'est-à-dire
+%        $dsr(\omega_i) \leq dsr(\omega_h)$.
+%
+%    \item $f^* = mindsr$ : 
+%        
+%        Comme $[\omega_i]_{a_j} = [\omega_h]_{a_j}$, on a  $\omega_l \in
+%        [\omega_i]_{a_j}$ si et seulement si $\omega_l \in [\omega_h]_{a_j}$.
+%        Ainsi, $min_{\omega_l \in [\omega_i]_{a_j}} |[\omega_l]^{\leq}_{\lambda}
+%        \cap [\omega_l]^{\leq}_{a_j}| = min_{\omega_l \in [\omega_h]_{a_j}}
+%        |[\omega_l]^{\leq}_{\lambda} \cap [\omega_l]^{\leq}_{a_j}|$, et donc
+%        $mindsr(\omega_i) \leq mindsr(\omega_h)$.
+%    
+%    \item $f^* = maxdsr$ : 
+%
+%        Comme $[\omega_i]_{a_j} = [\omega_h]_{a_j}$, on a $\sum_{\omega_l \in
+%        [\omega_i]_{a_j}} \frac{|[\omega_l]^{\leq}_{\lambda} \cap
+%        [\omega_l]^{\leq}_{a_j}|}{|[\omega_i]_{a_j}|} = \sum_{\omega_l \in
+%        [\omega_h]_{a_j}} \frac{|[\omega_l]^{\leq}_{\lambda} \cap
+%        [\omega_l]^{\leq}_{a_j}|}{|[\omega_i]_{a_j}|}$. Et
+%        $[\omega_i]^{\leq}_{\lambda} = [\omega_i]^{\leq}_{a_j}$, d'où
+%        $avgdsr(\omega_i) \leq avgdsr(\omega_h)$.
+%
+%    \item $f^* = avgdsr$ :
+%
+%        Si $[\omega_i]^{\leq}_{a_j} = [\omega_h]^{\leq}_{a_j}$, alors
+%        $\sum_{\omega_l \in [\omega_i]_{a_j}} \frac{|[\omega_l]^{\leq}_{\lambda}
+%        \cap |[\omega_l]^{\leq}_{a_j}|}{|[\omega_l]^{\leq}_{a_j}|} =
+%        \sum_{\omega_l \in [\omega_h]_{a_j}} \frac{|[\omega_l]^{\leq}_{\lambda}
+%        \cap |[\omega_l]^{\leq}_{a_j}|}{|[\omega_l]^{\leq}_{a_j}|}$ et
+%        $|[\omega_i]^{\leq}_{a_j}| = |[\omega_h]^{\leq}_{a_j}|$, d'où
+%        $avgdsr(\omega_i) \leq avgdsr(\omega_h)$.
+%
+%\end{itemize}
+%\end{proof}
+%
+%
+%\section{Démonstration des propriétés de $g^*$}
+%\label{appendix:demo-g}
+%
+%Soit $\omega_i \in \Omega$. Notons $f_i = f^*(\omega_i) \in ]0,1]$. \\
+%
+%\textbf{(G1)} Montrons que $g^*(f_i) \in [0, +\infty)$.
+%
+%\begin{proof}
+%\begin{itemize}
+%    \item $g^*(f_i) = -\log_{2}(f_i)$ :
+%
+%        Pour tout $x \in ]0,1]$, $\log_{2}(x) \in ]-\infty, 0]$ donc $-\log_{2}(x)
+%        \in [0,+\infty[$, et donc $-\log_{2}(f_i) \in [0,+\infty[$.
+%
+%    \item $g^*(f_i) = 1 - f_i$ : 
+%
+%        $0 < f_i \leq 1 \Rightarrow 0 \leq 1-f_i < 1 \Rightarrow 1-f_i \in
+%        [0,+\infty[$
+%
+%    \item $g^*(f_i) = \frac{-\log_{2}(f_i)}{f_i}$
+%
+%        $-\log_{2}(f_i) \in [0,+\infty[$ et $f_i \in ]0,1]$ donc
+%        $\frac{-\log_{2}(f_i)}{f_i} \in [0,+\infty[$
+%
+%    \item $g^*(f_i) = 1-f_i^2$ :
+%
+%        $0 < f_i \leq 1 \Rightarrow 0 < f_i^2 \leq 1 \Rightarrow 0 \leq 1-f_i^2
+%        < 1$
+%
+%\end{itemize}
+%\end{proof}
+%
+%\textbf{(G2)} Montrons que $g^*$ est strictement décroissant sur $]0,1]$.
+%
+%\begin{proof}
+%\begin{itemize}
+%
+%    \item $g^*(f_i) = -\log_{2}(f_i)$ :
+%
+%        $\log_{2}$ est strictement croissant sur $]0, +\infty[$ donc $-\log_{2}$
+%        est strictement décroissant sur $]0,+\infty[$, et donc sur $]0,1]$.
+%
+%    \item $g^*(f_i) = 1 - f_i$ : 
+%        
+%        Soient $f_i, f_h \in ]0,1]$ tels que $f_i < f_h$. On a alors $1 - f_i >
+%        1 - f_h$ donc $g^*$ est strictement décroissant sur $]0,1]$.
+%
+%    \item $g^*(f_i) = \frac{-\log_{2}(f_i)}{f_i}$ :
+%
+%        Soient $f_i, f_h \in ]0,1]$ tels que $f_i < f_h$. Alors $-\log_{2}(f_i) >
+%        -\log_{2}(f_h)$, d'où $\frac{-\log_{2}(f_i)}{f_i} >
+%        \frac{-\log_{2}(f_h)}{f_h}$.
+%
+%    \item $g^*(f_i) = 1-f_i^2$ :
+%
+%        Soient $f_i, f_h \in ]0,1]$ tels que $f_i < f_h$. Alors $-f_i^2 >
+%        -f_h^2$, d'où $1 - f_i^2 > 1 - f_h^2$. 
+%
+%\end{itemize}
+%\end{proof}
+%
+%\textbf{(G3)} Montrons que $g^*(1) = 0$.
+%
+%\begin{proof}
+%\begin{itemize}
+%
+%    \item $g^*(f_i) = -\log_{2}(f_i)$ :
+%        $\log_{2}(1) = 0$ donc $g^*(1) = -\log_{2}(1) = 0$.
+%
+%    \item $g^*(f_i) = 1 - f_i$ : 
+%        $g^*(1) = 1 - 1 = 0$
+%
+%    \item $g^*(f_i) = \frac{-\log_{2}(f_i)}{f_i}$ :
+%        $g^*(1) = \frac{-\log_{2}(1)}{1} = 0$
+%
+%    \item $g^*(f_i) = 1-f_i^2$ :
+%        $g^*(1) = 1 - 1^2 = 0$
+%
+%\end{itemize}
+%\end{proof}
+%
+%\section{Démonstration des propriétés de $h^*$}
+%\label{appendix:demo-h}
+%
+%Notons $g_i = g^*(f^*(\omega_i))$. Soit $f^*$ une fonction respectant
+%\textbf{(F1)}, \textbf{(F2)}, \textbf{(F3)}, et $g^*$ une fonction vérifiant
+%\textbf{(G1)}, \textbf{(G2)}, \textbf{(G3)}. \\
+% 
+%\textbf{(H1)} Montrons que $h^*(g_1,...,g_n) \in [0,+\infty[$.
+%
+%\begin{proof}
+%        \begin{itemize}
+%        \item $h^*(g_1,...,g_n) = \sum_{i=1}^{n} \frac{1}{n} g_i$ :
+%
+%            D'après \textbf{(G1)}, $g_i \in [0,+\infty[$ pour tout $i=1,...,n$.
+%            On a donc $\sum_{i=1}^{n} g_i \in [0,+\infty[$, d'où $\sum_{i=1}^{n}
+%            \frac{1}{n} g_i \in [0,+\infty[$.
+%
+%        \item $h^*(g_1,...,g_n) = max_{i=1,...,n} \{g_i\}$ :
+%            
+%            De même, $\forall i=1,...,n$, $g_i \in [0,+\infty[$ donc
+%            $max_{i=1,...,n}\{g_i\} \in [0,+\infty[$.
+%
+%        \item $h^*(g_1,...,g_n) = \sqrt{\sum_{i=1}^{n} \frac{1}{n} g_i^2}$ :
+%            
+%            Pour tout $i=1,...,n$, $0 \leq g_i$, d'où $0 \leq g_i^2$, puis $0
+%                \leq \frac{1}{n} \sum_{i=1}^{n} g_i^2$, et enfin, $0 \leq
+%                \sqrt{\sum_{i=1}^{n} \frac{1}{n} g_i^2}$.
+%
+%    \end{itemize}
+%\end{proof}
+%
+%\textbf{(H2)} Montrons que $h^*(g_1,...,g_n) = h^*(g_{\sigma
+%(1)},...,h^*(g_{\sigma (n)}$ pour toute permutation $\sigma$.\\
+%
+%\textcolor{red}{À compléter} % À COMPLÉTER
+%
+%\textbf{(H3)} Montrons que, si $g_i \leq g_i'$, alors $h^*(g_1,...,g_i,...,g_n)
+%\leq h^*(g_1,...,g_i',...,g_n)$. \\
+%
+%\begin{proof}
+%    Soient $g_i, g_i' \in [0,+\infty[$ tels que $g_i < g_i'$. \\
+%    \begin{itemize}
+%    
+%        \item $h^*(g_1,...,g_n) = \sum_{i=1}^{n} \frac{1}{n} g_i$ :
+%
+%            $g_i \leq g_i'$ donc $g_1+...+g_i+...+ g_n \leq g_1+...+
+%            g_i'+...+g_n$. On a bien $\frac{1}{n}(g_1+...+g_i+...+g_n) \leq
+%            \frac{1}{n}(g_1+...+g_i'+...+g_n)$.
+%
+%        \item $h^*(g_1,...,g_n) = max_{i=1,...,n} \{g_i\}$ :
+%
+%            Si $g_i = max \{g_1,...,g_i,...g_n\}$, alors $max
+%            \{g_1,...,g_i,...,g_n\} \leq max \{g_1,...,g_i',...g_n\} = g_i'$.
+%            Sinon, $max \{g_1,...,g_i,...g_n\} = max \{g_1,...,g_i',...g_n\}$.
+%
+%        \item $h^*(g_1,...,g_n) = \sqrt{\sum_{i=1}^{n} \frac{1}{n} g_i^2}$ :
+%
+%            $g_i^2 \leq g_i'^2$ donc $g_i^2 + \sum_{l=1,l \neq i}^{n} g_l^2 \leq
+%            \sum_{l=1,l \neq i'}^{n} g_l^2$. Ainsi,
+%            $\frac{1}{n}(g_1^2+...+g_i^2+...+g_n^2) \leq
+%            \frac{1}{n}(g_1^2+...+g_i'^2+...+g_n^2)$, ce qui permet de vérifier
+%            $\sqrt{\frac{1}{n}(g_1^2+...+g_i^2+...+g_n^2)} \leq
+%            \sqrt{\frac{1}{n}(g_1^2+...+g_i'^2+...+g_n^2)} $
+%
+%    \end{itemize}
+%\end{proof}
+%
+%\textbf{(H4)} Montrons que $h^*(g_1,...,g_n) = 0$ si et seulement si $g_i = 0$.
+%
+%\begin{proof}
+%    On rappelle que $0 \leq g_i$ pour tout $i=1,...,n$.
+%    \begin{itemize}
+%        \item $h^*(g_1,...,g_n) = \sum_{i=1}^{n} \frac{1}{n} g_i$ :
+%            
+%            $\sum_{i=1}^{n} \frac{1}{n} g_i = 0$ si et seulement si $g_i=0,
+%            \forall i=1,...,n$.
+%
+%        \item $h^*(g_1,...,g_n) = max_{i=1,...,n} \{g_i\}$ :
+%
+%            $max \{g_1,...,g_n\}$ si et seulement si $g_i=0$ pour tout
+%            $i=1,...,n$. 
+%
+%        \item $h^*(g_1,...,g_n) = \sqrt{\sum_{i=1}^{n} \frac{1}{n} g_i^2}$ :
+%
+%            $\sqrt{\sum_{i=1}^{n} \frac{1}{n} g_i^2} = 0$ si et seulement si
+%            $\sum_{i=1}^{n} \frac{1}{n} g_i^2$ si et seulement si $g_i=0$ pour
+%            tout $i=1,...,n$.
+%
+%    \end{itemize}
+%\end{proof}
+%
+%\section{Démonstration de l'\eqref{eq:eq-f}}
+%\label{appendix:demo-eqf}
+%Soit $\omega_i \in \Omega$.  On rappelle que $f^*_P(\omega_i) =
+%mindsr(\omega_i)$, et $f^*_S(\omega_i) = dsr(\omega_i) = f^*_G(\omega_i)$.
+%
+%Montrons que $\frac{1}{n} \leq f^*_P(\omega_i) \leq
+%f^*_G(\omega_i) \leq f^*_S(\omega_i) \leq 1$.
+%
+%\begin{proof}
+%
+%\begin{itemize}
+%    \item Montrons que $\frac{1}{n} \leq f^*_P(\omega_i)$.
+%
+%        Si $a_j(\omega_i) = min_{\omega_h \in \Omega} \{a_j(\omega_h)\}$, alors
+%        $[\omega_i]^{\leq}_{a_j} = \Omega$. On a donc $|[\omega_i]^{\leq}_{a_j}| =
+%        |\Omega| = n$. \\ Sinon, $|[\omega_i]^{\leq}_{a_j}| < n$.
+%
+%        De plus, pour tout $\omega_h \in \Omega$,
+%        $1 \leq [\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}$ car $\omega_h
+%        \in [\omega_h]^{\leq}_{\lambda}$ et $\omega_h \in
+%        [\omega_h]^{\leq}_{a_j}$.
+%
+%        D'où $1 \leq |[\omega_h]^{\leq}_{\lambda} \cap
+%        [\omega_h]^{\leq}_{a_j}|$, et $1 \leq min_{\omega_h \in [\omega_i]_{a_j}}
+%        |[\omega_h]^{\leq}_{\lambda} \cap [\omega_h]^{\leq}_{a_j}|$. \\ Ainsi,
+%        $\frac{1}{n} \leq \frac{min_{\omega_h \in [\omega_i]_{a_j}}
+%        |[\omega_h]^{\leq}_{\lambda} \cap
+%        [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} = f^*_P(\omega_i)$.
+%    
+%    \item Montrons que $f^*S(\omega_i) \leq 1$.
+%
+%        \begin{IEEEeqnarray*}{rCl"s}
+%            [\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j} &\subseteq&
+%            [\omega_i]^{\leq}_{a_j} \\
+%            \textrm{d'où } |[\omega_i]^{\leq}_{\lambda} \cap
+%            [\omega_i]^{\leq}_{a_j}| &\leq& |[\omega_i]^{\leq}_{a_j}| \\
+%            \textrm{donc } f^*_S(\omega_i) = \frac{|[\omega_i]^{\leq}_{\lambda}
+%            \cap [\omega_i]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} &\leq& 1
+%            \\
+%        \end{IEEEeqnarray*}
+%
+%    \item Montrons que $f^*_P(\omega_i) \leq f^*_G(\omega_i) = f^*_S(\omega_i)$.
+%
+%        \begin{IEEEeqnarray*}{rCl"s}
+%            min_{\omega_h \in [\omega_i]_{a_j}} |[\omega_h]^{\leq}_{\lambda}
+%            \cap [\omega_h]^{\leq}_{a_j}| &=& min(|[\omega_i]^{\leq}_{\lambda}
+%            \cap [\omega_i]^{\leq}_{a_j}|, min_{\omega_h \in [\omega_i]_{a_j},
+%            \omega_h \neq \omega_i } |[\omega_h]^{\leq}_{\lambda}
+%            \cap [\omega_h]^{\leq}_{a_j}|)  \\
+%            &\leq & |[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j}|
+%            \\
+%            \textrm{donc } \frac{min_{\omega_h \in [\omega_i]_{a_j}}
+%            |[\omega_h]^{\leq}_{\lambda} \cap
+%            [\omega_h]^{\leq}_{a_j}|}{|[\omega_i]^{\leq}_{a_j}|} &\leq&
+%            \frac{|[\omega_i]^{\leq}_{\lambda} \cap [\omega_i]^{\leq}_{a_j}|
+%            }{|[\omega_i]^{\leq}_{a_j}|} = dsr(\omega_i) = f^*_G(\omega_i) =
+%            f^*_S(\omega_i) \\
+%        \end{IEEEeqnarray*}
+%
+%\end{itemize}
+%
+%\end{proof}
+%
+%\section{Démonstration de l'\eqref{eq:eq-g}}
+%\label{appendix:demo-eqg}
+%
+%Soit $\omega_i \in \Omega$.  On rappelle que $g^*_S(f^*_S(\omega_i)) = -\log_{2}
+%dsr(\omega_i)$, et $g^*_P(f^*_P(\omega_i)) =
+%-\frac{\log_{2}mindsr(\omega_i)}{mindsr(\omega_i)}$. \\
+%
+%Montrons que $g^*_G(f^*_G(\omega_i)) \leq g^*_S(f^*_S(\omega_i)) \leq
+%g^*_P(f^*_P(\omega_i))$.
+%
+%\begin{myproof}
+%    Montrons que $g^*_G(f^*_G(\omega_i)) \leq g^*_S(f^*_S(\omega_i))$.
+%
+%    $$g^*_G(f^*_G(\omega_i)) = 1 - f^*_G(\omega_i)$$ et $$g^*_S(f^*_S(\omega_i))
+%    = -\log_{2}(f^*_S(\omega_i))$$
+%
+%    Considérons, pour tout $x \in ]0,1]$, la fonction $g$ telle que $$g(x) =
+%    -\log_{2}(x) - 1 + x = x - \log_{2}(x) - 1$$ 
+%
+%    On a $$g'(x) = 1 - \frac{1}{x}$$
+%
+%    $g'$ est strictement négatif sur $]0,1]$, donc g est strictement décroissant
+%    sur $]0,1]$. De plus, $g(1) = 0$, donc $g(x) \geq 0$ pour tout $x \in
+%    ]0,1]$.
+%
+%    Donc $$g^*_G(f^*_G(\omega_i)) \leq g^*_S(f^*_S(\omega_i))$$
+%
+%    Montrons que $g^*_S(f^*_S(\omega_i)) \leq g^*_P(f^*_P(\omega_i))$.
+%
+%    On sait, d'après l'\eqref{eq:eq-f}, que 
+%    $$f^*_P(\omega_i) \leq f^*_G(\omega_i)$$
+%
+%    On sait que $x \longmapsto -\frac{\log_{2}(x)}{x}$ et $x \longmapsto
+%    -\log_{2}(x)$ sont des fonctions sitrctement décroissantes sur $]0,1]$. Pour
+%    tout $x, x' \in ]0,1]$ tels que $x \leq x'$,
+%
+%    $$ -\frac{\log_{2}(x)}{x} \geq -\frac{log_2(x')}{x'}$$
+%
+%    Et $$-\log_{2}(x) \geq -\log_{2}(x')$$
+%
+%    Pour tout $z \in ]0,1]$, on a 
+%    $$ -\frac{\log_2{z}}{z} \geq -\log_{2}(z)$$
+%
+%    On a alors $$-\frac{\log_2(x)}{x} \geq -\log_2(x')$$
+%
+%    D'où $$g^*_S(f^*_S(\omega_i)) \leq g^*_P(f^*_P(\omega_i))$$
+%
+%\end{myproof}
+%
+%\section{Démonstration de la \propref{prop:prop1}}
+%\label{appendix:prop1}
+%
+%\begin{myproof}
+%    \begin{enumerate}
+%        \item Montrons que $H^*_G(\lambda|a_j) \leq H^*_S(\lambda|a_j) \leq
+%                H^*_P(\lambda|a_j)$.
+%    
+%            \begin{IEEEeqnarray*}{lllll}
+%                g^*_G(f^*_G(\omega_i)) &\leq& g^*_S(f^*_S(\omega_i)) &\leq&
+%                g^*_P(f^*_P(\omega_i))\\
+%                \sum_{i=1}^{n} \frac{1}{n} g^*_G(f^*_G(\omega_i)) &\leq&
+%                \sum_{i=1}^{n} \frac{1}{n} g^*_S(f^*_S(\omega_i)) &\leq&
+%                \sum_{i=1}^{n} \frac{1}{n} g^*_P(f^*_P(\omega_i)) \\
+%                H^*_G(\lambda|a_j) &\leq& H^*_S(\lambda|a_j) &\leq&
+%                H^*_P(\lambda|a_j) \\
+%            \end{IEEEeqnarray*}
+%               
+%        \item Montrons que $0 \leq H^*_G(\lambda|a_j) < \frac{n-1}{n}$.
+%
+%            On sait que, pour tout $\omega_i \in \Omega$,
+%            $$ \frac{1}{n} \leq f^*_G(\omega_i) \leq 1 \textrm{ (\eqref{eq:eq-f})}$$
+%
+%            $g^*_G(\omega_i) = 1 - f^*(\omega_i)$ et $g^*_G$ est strictement
+%            décroissant.
+%
+%            \begin{IEEEeqnarray*}{rrrCl"s}
+%                \textrm{Donc } 1-\frac{1}{n} &\geq& g^*_G(\omega_i) &\geq& 0\\
+%                \sum_{i=1}^{n}\frac{1}{n}(1-\frac{1}{n}) &\geq& \sum_{i=1}^{n}
+%                \frac{1}{n} g^*_G(\omega_i) &\geq&  0\\
+%                \textrm{ainsi, }\frac{n-1}{n} &\geq& H^*_G(\lambda|a_j) &\geq& 0 \\
+%                \text{et } H^*_G(\lambda|a_j) &\leq& \frac{n-1}{n} &&\textrm{car
+%                on ne peut pas avoir } dsr(\omega_h) = 1, \forall \omega_h \in
+%                \Omega \\
+%            \end{IEEEeqnarray*}
+%
+%        \item $0 \leq H^*_S(\lambda|a_j) < \log_{2}(n)$.\\
+%            Pour tout $\omega_i \in \Omega$,
+%
+%            \begin{IEEEeqnarray*}{rrrCl"s}
+%                \frac{1}{n} &\leq& f^*_S(\omega_i) &\leq& 1\\
+%                -\log_{2} (\frac{1}{n}) &\geq& &-\log_{2} (f^*_S(\omega_i)) \geq&
+%                -\log_{2}(1) \\
+%                \sum_{i=1}^{n} \frac{1}{n}(-\log_{2} (\frac{1}{n})) &\geq&
+%                \sum_{i=1}^{n} \frac{1}{n} g^*_S(f^*_S(\omega_i)) &\geq& 0 \\
+%                \sum_{i=1}^{n} \frac{1}{n} \log_{2}(n) = \frac{n\log_{2}(n)}{n}
+%                = \log_2(n) &\geq& \sum_{i=1}^{n} \frac{1}{n}
+%                g^*_S(f^*_S(\omega_i)) &\geq& 0  \\
+%                0 &\leq& H^*_S(\lambda|a_j) &\leq& \log_2(n)\\
+%                0 &\leq& H^*_S(\lambda|a_j) &<& \log_2(n) \\
+%            \end{IEEEeqnarray*}
+%
+%        \item Montrons que $0 \leq H^*_P(\lambda|a_j) < n \log_{2}(n)$.\\
+%            Pour tout $\omega_i \in \Omega$,
+%
+%            \begin{IEEEeqnarray*}{rrrCl"s}
+%                \frac{1}{n} &\leq& f^*_P(\omega_i) &<& 1 \\
+%                -\log_{2}(\frac{1}{n}) &\geq& -\log_{2}(f^*_P(\omega_i)) &\geq&
+%                0 \\
+%                \frac{-\log_{2}(\frac{1}{n})}{f^*_P(\omega_i)} &\geq&
+%                -\frac{\log_{2}(f^*_P(\omega_i))}{f^*_P(\omega_i)} &\geq&
+%                0 \\
+%            \end{IEEEeqnarray*}
+%
+%            Comme $f^*_P(\omega_i) \geq \frac{1}{n}$, on a
+%
+%            \begin{IEEEeqnarray*}{rrrCl"s}
+%                \frac{-\log_{2}(\frac{1}{n})}{\frac{1}{n}} &\geq&
+%                -\frac{\log_{2}(f^*_P(\omega_i))}{f^*_P(\omega_i)} &\geq&
+%                0 \\
+%                -n \log_{2}(\frac{1}{n}) &\geq& g^*_P(f^*_P(\omega_i)) &\geq& 0
+%                \\
+%                \sum_{i=1}^{n} \frac{1}{n} (-n \log_{2}(\frac{1}{n})) &\geq&
+%                H^*_P(\lambda|a_j) &\geq& 0 \\
+%                0 &\leq& H^*_P(\lambda|a_j) &\leq&n\log_{2}(n) \\
+%            \end{IEEEeqnarray*}
+%
+%    \end{enumerate}
+%\end{myproof}
+%
+%\section{Démonstration du théorème \ref{thm:thm-H}}
+%\label{appendix:demothm-H}
+%
+%Soient $f^*$, $g^*$, et $h^*$ des fonctions satisfaisant respectivement les
+%conditions \textbf{(F1)-(F3)}, \textbf{(G1)-(G3)}, \textbf{(H1)-(H4)}.
+%$H^*(\lambda|a_j) = 0$ si et seulement si $\lambda$ est monotone par rapport à
+%$a_j$, c'est-à-dire, pour tout $\omega_i, \omega_h \Omega$,
+%
+%    $$ a_j(\omega_i) \leq a_j(\omega_j) \Rightarrow \lambda(\omega_i) \leq
+%    \lambda(\omega_h) $$
+%
+%\begin{myproof}
+%
+%    Supposons $H^*(\lambda|a_j)$. Alors,
+%
+%    \begin{IEEEeqnarray*}{rrCl"s}
+%        & h^*(g^*(f^*(\omega_1)),...,g^*(f^*(\omega_n))) &=& 0\\        
+%        \textrm{$\Leftrightarrow$}& g^*(f^*(\omega_i)) &=& 0 & \textrm{ pour tout $\omega_i \in \Omega$}
+%        \textbf{(H4)} \\
+%        \textrm{$\Leftrightarrow$}&f^*(\omega_i) &=& 1 &\textbf{(G3)}\\
+%        \textrm{$\Leftrightarrow$}&a_j(\omega_i) \leq a_j(\omega_h) &\Rightarrow& \lambda(\omega_i) \leq
+%        \lambda(\omega_h) & \textrm{ pour tout $\omega_i,\omega_h \in \Omega$}\\
+%    \end{IEEEeqnarray*}
+%\end{myproof}
+%
+%\printbibliography 

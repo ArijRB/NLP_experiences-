@@ -2,7 +2,8 @@
 ### Projet réalisé par :
 Kim-Anh Laura Nguyen et Arij Riabi
 ### Promo DAC 2018-2019
-
+### Enseignant :
+ Vincent Guigue
 # Table des matières
 ## 1 POS tagging, analyse de phrases
  1.1 Approche à base de dictionnaire <br/>
